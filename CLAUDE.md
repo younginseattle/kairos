@@ -6,7 +6,7 @@ This file gives Claude Code persistent context about the Kairos codebase. Read t
 
 ## What This Project Is
 
-Kairos is a personal job search intelligence tool for Matt Young — a VP/Director-level Product leader targeting Platform, Infrastructure, Observability, and AI/ML companies. It is a single-user app, not a SaaS product.
+Kairos is a personal job search intelligence tool for a VP/Director-level Product leader targeting Platform, Infrastructure, Observability, and AI/ML companies. It is a single-user app, not a SaaS product.
 
 The app automates job discovery, AI-powered fit scoring, and resume tailoring. It runs locally via Vite and connects to Supabase for persistence and the Anthropic API for AI features.
 
