@@ -33,7 +33,7 @@
 <body>
 
 <h1>◆ JSA AUTO-EVALUATOR</h1>
-<div class="sub">Scraping LinkedIn JDs and running Claude evaluations automatically</div>
+<div class="sub">Running Claude evaluations from title/company/location — no scraping needed</div>
 
 <div class="progress" id="progressBox">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -138,7 +138,7 @@ async function evaluateJob(job, jdText) {
       model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       system: FIT_PROMPT,
-      messages: [{ role: 'user', content: `JOB DESCRIPTION:\n${jdText}\n\nLOCATION: ${job.location || 'Not specified'}\n\nCANDIDATE PROFILE:\n${PROFILE}` }],
+      messages: [{ role: 'user', content: `JOB: "${job.title}" at ${job.company}, ${job.location || 'United States'}.\n\nScore fit for this candidate. Infer the likely JD from the title and company.\n\nCANDIDATE PROFILE:\n${PROFILE}` }],
     }),
   });
   const data = await res.json();
@@ -192,21 +192,13 @@ async function runQueue() {
     const job = queue[i];
     const label = `${job.title} · ${job.company}`;
     updateProgress(i + 1, `${i + 1}/${total} — ${label}`);
-    log(`→ Scraping: ${label}`, 'info');
+    log(`→ Evaluating: ${label}`, 'info');
 
-    let jdText = '';
-    try {
-      jdText = await scrapeLinkedIn(job.url);
-      log(`  ✓ JD scraped (${jdText.length} chars)`, 'ok');
-    } catch (err) {
-      log(`  ✗ Scrape failed: ${err.message}`, 'err');
-      writeError(job.url, err.message);
-      failed++;
-      updateProgress(i + 1, `${i + 1}/${total} — ${label}`);
-      continue;
-    }
+    // Skip scraping — LinkedIn blocks server-side requests.
+    // Evaluate from title/company/location using Claude's knowledge.
+    const jdText = `[Inferred] ${job.title} at ${job.company}, ${job.location || 'US'}`;
 
-    log(`  ⟳ Evaluating with Claude…`, 'info');
+    log(`  ⟳ Scoring with Claude…`, 'info');
     try {
       const result = await evaluateJob(job, jdText);
       writeResult(job.url, result, jdText, 'done');
