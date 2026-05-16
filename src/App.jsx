@@ -140,6 +140,21 @@ function getTimeStrategy(pursuit) {
   return m[pursuit] || "Skip";
 }
 
+function isLowConfidence(job) {
+  const jd = job.description || "";
+  const hasNullScores = job.skills_match == null || job.experience_match == null || job.culture_match == null;
+  const shortJd = jd.trim().length > 0 && jd.trim().length < 600;
+  const cf = deriveConfidence({
+    confidence_score: job.confidence_score,
+    parsed: job.parsed ?? true,
+    jd_text: jd,
+    skills_match: job.skills_match,
+    experience_match: job.experience_match,
+    culture_match: job.culture_match,
+  });
+  return job.score != null && (cf < 0.6 || hasNullScores || shortJd);
+}
+
 function deriveConfidence({ confidence_score, parsed = true, jd_text = "", skills_match, experience_match, culture_match }) {
   let d = 30;
   if (parsed === true) d += 15; if (parsed === false) d -= 20;
@@ -1401,9 +1416,18 @@ async function doQuickScore(job) {
     setSupabaseLoading(false);
   }
 
-  async function doReEvaluateAll() {
+  function doReScoreLowConfidence() {
+    const lowConfIds = supabaseJobs.filter(j => isLowConfidence(j)).map(j => j.id);
+    if (!lowConfIds.length) { setReEvalError("No low-confidence jobs found in pipeline."); return; }
+    const idSet = new Set(lowConfIds);
+    setSelectedJobIds(idSet);
+    doReEvaluateAll(idSet);
+  }
+
+  async function doReEvaluateAll(overrideIds) {
     if (!anthropicKey) { setReEvalError("Add your Anthropic API key in Settings."); return; }
-    const jobs = supabaseJobs.filter(j => j.title && j.url && (selectedJobIds.size === 0 || selectedJobIds.has(j.id)));
+    const idsToUse = overrideIds ?? selectedJobIds;
+    const jobs = supabaseJobs.filter(j => j.title && j.url && (idsToUse.size === 0 || idsToUse.has(j.id)));
     if (!jobs.length) { setReEvalError("No jobs to re-evaluate."); return; }
 
     setReEvalRunning(true);
@@ -1908,13 +1932,14 @@ async function doQuickScore(job) {
               return <button key={status} onClick={() => setSavedFilter(f => ({ ...f, status }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.accentDim : T.border}`, background: active ? T.greenBg : "transparent", color: active ? T.green : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
             })}
             <div style={{ width: 1, height: 16, background: T.border, margin: "0 2px" }} />
-            {[{ label: "Priority", value: "PRIORITY" }, { label: "Strong", value: "STRONG" }, { label: "Unscored", value: "unscored" }].map(({ label, value }) => {
+            {[{ label: "Priority", value: "PRIORITY" }, { label: "Strong", value: "STRONG" }, { label: "Unscored", value: "unscored" }, { label: "⚠ Low Conf", value: "low_confidence" }].map(({ label, value }) => {
               const active = savedFilter.pursuit === value;
               return <button key={value} onClick={() => setSavedFilter(f => ({ ...f, pursuit: active ? "all" : value }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.border : T.border}`, background: active ? T.surface : "transparent", color: active ? T.textSecondary : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
             })}
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <Btn small onClick={doRefreshSupabase} disabled={reEvalRunning}>↻</Btn>
-              <Btn small primary onClick={doReEvaluateAll} disabled={reEvalRunning || !supabaseJobs.length}>
+              <Btn small onClick={doReScoreLowConfidence} disabled={reEvalRunning || !anthropicKey}>⚠ Re-score Low Conf</Btn>
+              <Btn small primary onClick={() => doReEvaluateAll()} disabled={reEvalRunning || !supabaseJobs.length}>
                 {reEvalRunning ? "Scoring…" : selectedJobIds.size > 0 ? `Re-score (${selectedJobIds.size})` : "Re-score all"}
               </Btn>
             </div>
@@ -1957,6 +1982,7 @@ async function doQuickScore(job) {
             if (savedFilter.status !== "all" && j.status !== savedFilter.status) return false;
             if (savedFilter.pursuit !== "all") {
               if (savedFilter.pursuit === "unscored") return j.score == null;
+              if (savedFilter.pursuit === "low_confidence") return isLowConfidence(j);
               if (ej._pursuit !== savedFilter.pursuit) return false;
             }
             return true;
