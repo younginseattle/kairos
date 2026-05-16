@@ -1053,6 +1053,9 @@ export default function JobSearchAgent() {
   const [reEvalProgress,  setReEvalProgress]  = useState({ current: 0, total: 0, label: "" });
   const [reEvalError,     setReEvalError]     = useState("");
   const [selectedJobIds,  setSelectedJobIds]  = useState(new Set());
+  const [inlineJdPaste,   setInlineJdPaste]   = useState({});
+  const [inlineRescoring, setInlineRescoring] = useState({});
+  const [inlineJdOpen,    setInlineJdOpen]    = useState({});
 
   // Tailor
   const [tailorMode,       setTailorMode]       = useState("paste");
@@ -1414,6 +1417,46 @@ async function doQuickScore(job) {
     const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
     if (error) setSupabaseError(error.message); else setSupabaseJobs(data || []);
     setSupabaseLoading(false);
+  }
+
+  async function doInlineRescore(job) {
+    const jd = inlineJdPaste[job.id]?.trim();
+    if (!jd) return;
+    if (!anthropicKey) { setReEvalError("Add your Anthropic API key in Settings."); return; }
+    setInlineRescoring(prev => ({ ...prev, [job.id]: true }));
+    try {
+      const result = await runEvaluation({ apiKey: anthropicKey, jd, profile, location: job.location || "" });
+      const fields = {
+        description:             jd,
+        score:                   result.overall_score,
+        recommendation:          result.recommendation,
+        strengths:               result.strengths               || [],
+        gaps:                    result.gaps                    || [],
+        quick_wins:              result.quick_wins              || [],
+        verdict:                 result.verdict,
+        skills_match:            result.skills_match,
+        experience_match:        result.experience_match,
+        culture_match:           result.culture_match,
+        compensation_score:      result.compensation_score,
+        work_life_balance_score: result.work_life_balance_score,
+        growth_score:            result.growth_score,
+        location_score:          result.location_score,
+        company_score:           result.company_score,
+        confidence_score:        result.confidence,
+        missing_keywords:        result.missing_keywords        || [],
+        strategic_gaps:          result.strategic_gaps          || [],
+        score_explanation:       result.score_explanation       || null,
+        top_candidate_signal:    result.top_candidate_signal    || null,
+      };
+      const { error } = await supabase.from('jobs').update(fields).eq('id', job.id);
+      if (error) throw new Error(error.message);
+      setSupabaseJobs(prev => prev.map(j => j.id === job.id ? { ...j, ...fields } : j));
+      setInlineJdOpen(prev => ({ ...prev, [job.id]: false }));
+      setInlineJdPaste(prev => ({ ...prev, [job.id]: "" }));
+    } catch (e) {
+      setReEvalError(`Re-score failed: ${e.message}`);
+    }
+    setInlineRescoring(prev => ({ ...prev, [job.id]: false }));
   }
 
   function doReScoreLowConfidence() {
@@ -2049,6 +2092,40 @@ async function doQuickScore(job) {
                       <ScoreExplanationBlock explanation={job.score_explanation} />
                       <ScoreBreakdown job={job} />
                       <ScoreWarnings job={job} jd_text={job.description || ""} />
+                      {isLowConfidence(job) && (
+                        <div style={{ marginTop: 8, marginBottom: 4 }}>
+                          {!inlineJdOpen[job.id] ? (
+                            <button
+                              onClick={() => setInlineJdOpen(prev => ({ ...prev, [job.id]: true }))}
+                              style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", padding: "3px 10px", borderRadius: 3, border: `1px solid ${T.amberBorder}`, background: T.amberBg, color: T.amber, cursor: "pointer" }}>
+                              ⚠ Paste Full JD → Re-score
+                            </button>
+                          ) : (
+                            <div style={{ marginTop: 6 }}>
+                              <textarea
+                                className="jsa-textarea"
+                                style={{ height: 120, marginBottom: 6 }}
+                                placeholder="Paste the full job description here for a higher-confidence re-score…"
+                                value={inlineJdPaste[job.id] || ""}
+                                onChange={e => setInlineJdPaste(prev => ({ ...prev, [job.id]: e.target.value }))}
+                              />
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button
+                                  onClick={() => doInlineRescore(job)}
+                                  disabled={!inlineJdPaste[job.id]?.trim() || inlineRescoring[job.id]}
+                                  style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", padding: "3px 12px", borderRadius: 3, border: `1px solid ${T.accentDim}`, background: T.greenBg, color: T.green, cursor: (!inlineJdPaste[job.id]?.trim() || inlineRescoring[job.id]) ? "default" : "pointer", opacity: (!inlineJdPaste[job.id]?.trim() || inlineRescoring[job.id]) ? 0.5 : 1 }}>
+                                  {inlineRescoring[job.id] ? "Scoring…" : "⟳ Re-score with Full JD"}
+                                </button>
+                                <button
+                                  onClick={() => { setInlineJdOpen(prev => ({ ...prev, [job.id]: false })); setInlineJdPaste(prev => ({ ...prev, [job.id]: "" })); }}
+                                  style={{ fontFamily: T.fontMono, fontSize: 9, padding: "3px 8px", borderRadius: 3, border: `1px solid ${T.border}`, background: "transparent", color: T.textMuted, cursor: "pointer" }}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <ScoreMeta enriched={job} />
                       <StatusButtons jobId={job.id} currentStatus={job.status} onStatusChange={(id, status) => {
                         handleStatusChange(id, status);
