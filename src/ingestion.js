@@ -64,6 +64,21 @@ export const SOURCES = [
   // ── Seattle ecosystem ─────────────────────────────────────────
   { id: "smartsheet",           ats: "greenhouse", tier: 1, domain: "platform"        },
   { id: "Samsara",              ats: "greenhouse", tier: 2, domain: "infrastructure"  },
+
+  // ── Defense tech / new-space ──────────────────────────────────
+  { id: "anduril",           ats: "greenhouse", tier: 1, domain: "defense",  broadFilter: true },
+  { id: "palantir",          ats: "greenhouse", tier: 1, domain: "defense",  broadFilter: true },
+  { id: "shieldai",          ats: "greenhouse", tier: 2, domain: "defense"   },
+  { id: "rebelliondefense",  ats: "greenhouse", tier: 2, domain: "defense"   },
+  { id: "epirus",            ats: "greenhouse", tier: 2, domain: "defense"   },
+  { id: "skydio",            ats: "greenhouse", tier: 2, domain: "defense"   },
+  { id: "rocketlabusa",      ats: "greenhouse", tier: 2, domain: "space"     },
+  { id: "planet",            ats: "greenhouse", tier: 2, domain: "space"     },
+  { id: "axiomspace",        ats: "greenhouse", tier: 2, domain: "space"     },
+  { id: "relativityspace",   ats: "greenhouse", tier: 2, domain: "space"     },
+  { id: "joby",              ats: "greenhouse", tier: 2, domain: "defense"   },
+  { id: "wisk",              ats: "greenhouse", tier: 2, domain: "defense"   },
+  { id: "archer",            ats: "lever",      tier: 2, domain: "defense"   },
 ];
 // ─────────────────────────────────────────────────────────────────
 // FILTER CONFIGURATION

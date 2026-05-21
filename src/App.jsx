@@ -1591,7 +1591,7 @@ async function doQuickScore(job) {
   const TABS = [{ key: "discover", label: "Search" }, { key: "manual", label: "Evaluate" }, { key: "saved", label: "Pipeline" }, { key: "tailor", label: "Tailor" }];
 
   // Domain badge colors
-  const DOMAIN_COLORS = { observability: { color: T.green, bg: T.greenBg, border: T.greenBorder }, infrastructure: { color: T.blue, bg: T.blueBg, border: T.blueBorder }, platform: { color: T.amber, bg: T.amberBg, border: T.amberBorder } };
+  const DOMAIN_COLORS = { observability: { color: T.green, bg: T.greenBg, border: T.greenBorder }, infrastructure: { color: T.blue, bg: T.blueBg, border: T.blueBorder }, platform: { color: T.amber, bg: T.amberBg, border: T.amberBorder }, defense: { color: "#f97316", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.4)" }, space: { color: "#818cf8", bg: "rgba(129,140,248,0.12)", border: "rgba(129,140,248,0.4)" } };
 
   return (
     <div style={{ fontFamily: T.fontSans, maxWidth: 820, margin: "0 auto", padding: "28px 18px", background: T.bg, minHeight: "100vh" }}>
