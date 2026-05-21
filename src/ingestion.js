@@ -66,30 +66,15 @@ export const SOURCES = [
   { id: "Samsara",              ats: "greenhouse", tier: 2, domain: "infrastructure"  },
 
   // ── Observability (expanded) ──────────────────────────────────
-  { id: "chronosphere",      ats: "greenhouse", tier: 1, domain: "observability"             },
   { id: "cribl",             ats: "greenhouse", tier: 1, domain: "observability"             },
-  { id: "sysdig",            ats: "greenhouse", tier: 1, domain: "observability"             },
   { id: "kentik",            ats: "greenhouse", tier: 2, domain: "observability"             },
 
   // ── AI / ML platforms (expanded) ─────────────────────────────
-  { id: "wandb",             ats: "greenhouse", tier: 1, domain: "platform",  broadFilter: true },
-  { id: "cohere",            ats: "greenhouse", tier: 1, domain: "platform",  broadFilter: true },
   { id: "scaleai",           ats: "greenhouse", tier: 1, domain: "platform",  broadFilter: true },
-  { id: "pinecone",          ats: "greenhouse", tier: 2, domain: "platform",  broadFilter: true },
-  { id: "huggingface",       ats: "lever",      tier: 1, domain: "platform",  broadFilter: true },
 
   // ── Infrastructure / data platform (expanded) ─────────────────
-  { id: "pulumi",            ats: "greenhouse", tier: 1, domain: "infrastructure"            },
   { id: "fastly",            ats: "greenhouse", tier: 1, domain: "infrastructure"            },
-  { id: "teleport",          ats: "greenhouse", tier: 2, domain: "infrastructure"            },
-  { id: "confluent",         ats: "greenhouse", tier: 1, domain: "platform"                  },
   { id: "fivetran",          ats: "greenhouse", tier: 2, domain: "platform"                  },
-  { id: "airbyte",           ats: "greenhouse", tier: 2, domain: "platform"                  },
-  { id: "astronomer",        ats: "greenhouse", tier: 2, domain: "platform"                  },
-
-  // ── DevSecOps / security ──────────────────────────────────────
-  { id: "snyk",              ats: "greenhouse", tier: 1, domain: "devtools"                  },
-  { id: "lacework",          ats: "greenhouse", tier: 2, domain: "infrastructure"            },
 
   // ── Defense tech ─────────────────────────────────────────────
   // Note: Anduril, Palantir, Shield AI, Rebellion Defense, Skydio, Joby, Wisk, Archer,
