@@ -280,7 +280,7 @@ STRICT RULES:
 - Strong fit signals (score 75+): distributed telemetry, LLM/AI observability, ML pipeline monitoring, agentic workflows, MCP, Kubernetes-native platforms, high-cardinality data, SLO monitoring, automated remediation, API-first platforms, cloud-scale SaaS
 - Good fit signals (score 65-75): data platforms, developer tools, infrastructure automation, cloud-native products, PLG SaaS, enterprise B2B platform PM
 - Candidate has 10+ years, VP/Director-level, Seattle-based, strong technical depth in distributed systems — do not penalize for "overqualified" at Director level
-- LOCATION (candidate is Seattle-based, no relocation): Remote=95-100, Seattle/WA area=90-95, Hybrid Seattle=80-85, Hybrid elsewhere=60-75, In-office non-Seattle=40-60, Requires relocation=10-30
+- LOCATION (candidate is Seattle-based, no relocation): Always scan the FULL job description for remote signals ("or remote", "or remotely", "remotely in", "remote option", "remote eligible", "work remotely") — if any are present, treat as remote regardless of what the location field says. Remote=95-100, Seattle/WA area=90-95, Hybrid Seattle=80-85, Hybrid elsewhere=60-75, In-office non-Seattle=40-60, Requires relocation=10-30
 - work_life_balance_score: 85-100=remote-first or async culture, explicit flexibility signals, generous PTO, established company with balance-positive signals; 70-84=hybrid with flexibility, public/established company, no on-call signals, standard benefits; 50-69=high-growth startup, "fast-paced"/"high-velocity"/"wear many hats" language, implicit intensity, Series A/B; 30-49=on-call required, "always-on" culture, early-stage startup, 24/7 availability signals, explicit high-intensity language
 SCORING: weight experience_match 40%, skills_match 30%, role level gate. Most jobs 50-75.`;
 
@@ -444,7 +444,12 @@ export function classifyLocation(locationStr = "", jdText = "") {
     if (relocationCities.some(city => cityInText(city, lines))) {
       const hasRemoteOk = lines.includes("remote ok") || lines.includes("remote-ok") ||
         lines.includes("fully remote") || lines.includes("work from anywhere") ||
-        lines.includes("remote first") || lines.includes("remote-first");
+        lines.includes("remote first") || lines.includes("remote-first") ||
+        lines.includes("or remote") || lines.includes("or remotely") ||
+        lines.includes("remotely in") || lines.includes("remote in the u") ||
+        lines.includes("remote option") || lines.includes("remote eligible") ||
+        lines.includes("remote work") || lines.includes("can be remote") ||
+        /work(?:ing)? remotely/.test(lines);
       const hasSeattle = seattleKeywords.some(kw => cityInText(kw, lines));
       if (!hasRemoteOk && !hasSeattle) {
         const matchedCity = relocationCities.find(city => cityInText(city, lines));
@@ -490,6 +495,24 @@ export function classifyLocation(locationStr = "", jdText = "") {
     if (relocationCities.some(city => loc.includes(city))) {
       const hasSeattle = seattleKeywords.some(kw => loc.includes(kw));
       if (!hasSeattle) {
+        // Before penalizing, check if the JD description says remote is an option
+        const jd = (jdText || "").toLowerCase();
+        const jdHasRemote =
+          jd.includes("or remote") || jd.includes("or remotely") ||
+          jd.includes("remotely in") || jd.includes("remote in the u") ||
+          jd.includes("remote ok") || jd.includes("remote-ok") ||
+          jd.includes("fully remote") || jd.includes("work from anywhere") ||
+          jd.includes("remote first") || jd.includes("remote-first") ||
+          jd.includes("remote option") || jd.includes("remote eligible") ||
+          jd.includes("remote work") || jd.includes("can be remote") ||
+          /work(?:ing)? remotely/.test(jd);
+        if (jdHasRemote) {
+          const matchedCity = relocationCities.find(city => loc.includes(city));
+          const label = matchedCity
+            ? matchedCity.charAt(0).toUpperCase() + matchedCity.slice(1).split(",")[0]
+            : "office";
+          return { tier: "remote", penalty: 0, label: `Remote (${label} office optional)` };
+        }
         const matchedCity = relocationCities.find(city => loc.includes(city));
         const label = matchedCity.charAt(0).toUpperCase() + matchedCity.slice(1).split(",")[0];
         return { tier: "relocation", penalty: -10, label: "Relocation required (" + label + ")" };
