@@ -28,20 +28,23 @@ const BROAD_FILTER_COMPANIES = new Set([
 
 export const SOURCES = [
   // ── Observability / monitoring ────────────────────────────────
-  { id: "datadog",              ats: "greenhouse", tier: 1, domain: "observability"  },
-  { id: "elastic",              ats: "greenhouse", tier: 1, domain: "observability"  },
-  { id: "newrelic",             ats: "greenhouse", tier: 1, domain: "observability"  },
-  { id: "pagerduty",            ats: "greenhouse", tier: 1, domain: "observability"  },
-  { id: "grafanalabs",          ats: "greenhouse", tier: 1, domain: "observability"  },
-  { id: "honeycomb",            ats: "greenhouse", tier: 1, domain: "observability"  },
-  { id: "sumologic",            ats: "greenhouse", tier: 1, domain: "observability"  },
-  { id: "arizeai",              ats: "greenhouse", tier: 1, domain: "observability"  },
+  { id: "datadog",              ats: "greenhouse", tier: 1, domain: "observability"                    },
+  { id: "elastic",              ats: "greenhouse", tier: 1, domain: "observability"                    },
+  { id: "newrelic",             ats: "greenhouse", tier: 1, domain: "observability"                    },
+  { id: "pagerduty",            ats: "greenhouse", tier: 1, domain: "observability"                    },
+  { id: "grafanalabs",          ats: "greenhouse", tier: 1, domain: "observability"                    },
+  { id: "honeycomb",            ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
+  { id: "sumologic",            ats: "greenhouse", tier: 1, domain: "observability"                    },
+  { id: "arizeai",              ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
+  { id: "fiddler-ai",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+  { id: "observeinc",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+  { id: "galileo",              ats: "rippling",   tier: 1, domain: "observability",  broadFilter: true },
+  { id: "braintrust",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
 
   // ── AI / ML platforms (broad filter — any senior PM role) ────
   { id: "anthropic",            ats: "greenhouse", tier: 1, domain: "platform",       broadFilter: true },
   { id: "databricks",           ats: "greenhouse", tier: 1, domain: "platform",       broadFilter: true },
   { id: "gleanwork",            ats: "greenhouse", tier: 1, domain: "platform",       broadFilter: true },
-  { id: "arizeai",              ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
 
   // ── Infrastructure / cloud ────────────────────────────────────
   { id: "cloudflare",           ats: "greenhouse", tier: 1, domain: "infrastructure" },
@@ -247,6 +250,37 @@ async function fetchLeverJobs(companyId) {
   }));
 }
 
+async function fetchAshbyJobs(companyId) {
+  const res = await fetchWithTimeout(`https://api.ashbyhq.com/posting-api/job-board/${companyId}`);
+  if (!res.ok) throw new Error(`Ashby fetch failed for "${companyId}" — HTTP ${res.status}`);
+  const data = await res.json();
+  if (!Array.isArray(data.jobPostings)) throw new Error(`Ashby: unexpected response for "${companyId}"`);
+  return data.jobPostings.map(job => ({
+    title:       job.title,
+    location:    job.locationName || null,
+    url:         job.jobUrl || job.applyUrl,
+    description: job.descriptionHtml || "",
+    company:     companyId,
+    source:      "ashby",
+  }));
+}
+
+async function fetchRipplingJobs(companyId) {
+  const res = await fetchWithTimeout(`https://ats.rippling.com/api/v2/jobs?companySlug=${companyId}`);
+  if (!res.ok) throw new Error(`Rippling fetch failed for "${companyId}" — HTTP ${res.status}`);
+  const data = await res.json();
+  const jobs = Array.isArray(data) ? data : data.jobs;
+  if (!Array.isArray(jobs)) throw new Error(`Rippling: unexpected response for "${companyId}"`);
+  return jobs.map(job => ({
+    title:       job.title || job.jobTitle,
+    location:    job.location || job.locationName || null,
+    url:         job.url || job.applyUrl || job.jobUrl,
+    description: job.description || job.descriptionHtml || "",
+    company:     companyId,
+    source:      "rippling",
+  }));
+}
+
 /**
  * Dispatches to the correct fetcher.
  * Failures are isolated — one bad source never blocks the rest.
@@ -254,9 +288,11 @@ async function fetchLeverJobs(companyId) {
 async function fetchJobsFromSource({ id, ats }) {
   try {
     log(`Fetching ${ats} → ${id}…`);
-    const jobs = ats === "greenhouse"
-      ? await fetchGreenhouseJobs(id)
-      : await fetchLeverJobs(id);
+    const jobs =
+      ats === "greenhouse" ? await fetchGreenhouseJobs(id) :
+      ats === "lever"      ? await fetchLeverJobs(id)      :
+      ats === "ashby"      ? await fetchAshbyJobs(id)      :
+                             await fetchRipplingJobs(id);
     log(`  ✓ ${jobs.length} jobs from ${id}`);
     return jobs;
   } catch (err) {

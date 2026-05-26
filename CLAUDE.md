@@ -119,6 +119,23 @@ The full candidate profile string is defined inside `ingestion.js` as `candidate
 
 ---
 
+## Target Companies
+
+### Observability / Monitoring (tier 1 priority)
+Datadog, Elastic, New Relic, PagerDuty, Grafana Labs, Honeycomb, Sumo Logic, Cribl, Kentik,
+Arize AI, Fiddler AI, Observe Inc, Galileo AI, Braintrust
+
+### AI / ML Platforms
+Anthropic, Databricks, Glean, Scale AI
+
+### Infrastructure / Cloud / DevTools
+Cloudflare, CoreWeave, Temporal, LaunchDarkly, Vercel, Postman, dbt Labs, Harness, Fastly, Fivetran, Twilio, MongoDB, Stripe, GitLab, Smartsheet, Samsara
+
+### Defense Tech
+Epirus (others — Anduril, Palantir, etc. — have locked Greenhouse boards)
+
+---
+
 ## Scoring Rules (do not change without discussion)
 
 - Score below 60 = level mismatch, wrong domain, or bad location
