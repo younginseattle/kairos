@@ -124,11 +124,13 @@ const SKIP_PATTERNS = [
   /alumni/i,
   /actively hiring/i,
   /apply with/i,
+  /match your preferences/i,
+  /new jobs? for you/i,
 ];
 
 function shouldSkipLine(line) {
-  // Skip short noise / "X new job" lines (first 35 chars check)
-  if (/\d+\s+new\s+job/i.test(line.slice(0, 35))) return true;
+  // Skip "30 new jobs" / "30+ new jobs" header lines
+  if (/\d+\+?\s+new\s+jobs?/i.test(line.slice(0, 50))) return true;
   return SKIP_PATTERNS.some(re => re.test(line));
 }
 
