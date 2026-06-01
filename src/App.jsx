@@ -1444,7 +1444,13 @@ async function doQuickScore(job) {
     const updates = { status: newStatus };
     if (newStatus === "applied") updates.applied_at = new Date().toISOString();
     const { error } = await supabase.from('jobs').update(updates).eq('id', jobId);
-    if (error) return;
+    if (error) {
+      // applied_at column may not exist yet — fall back to status-only update
+      const { error: fallbackError } = await supabase.from('jobs').update({ status: newStatus }).eq('id', jobId);
+      if (fallbackError) return;
+      setSupabaseJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
+      return;
+    }
     setSupabaseJobs(prev => prev.map(j => j.id === jobId ? { ...j, ...updates } : j));
   }
 
@@ -2012,6 +2018,42 @@ async function doQuickScore(job) {
       {/* ════ PIPELINE ════ */}
       {tab === "saved" && (
         <>
+          {/* STATUS SUMMARY */}
+          {(() => {
+            const counts = {
+              new:          supabaseJobs.filter(j => j.status === "new").length,
+              reviewing:    supabaseJobs.filter(j => j.status === "reviewing" || j.status === "reviewed").length,
+              applied:      supabaseJobs.filter(j => j.status === "applied").length,
+              interviewing: supabaseJobs.filter(j => j.status === "interviewing").length,
+              offer:        supabaseJobs.filter(j => j.status === "offer").length,
+              passed:       supabaseJobs.filter(j => j.status === "pass").length,
+              rejected:     supabaseJobs.filter(j => j.status === "rejected").length,
+              closed:       supabaseJobs.filter(j => j.status === "closed").length,
+            };
+            const total = supabaseJobs.length;
+            const stats = [
+              { label: "Total",        value: total,              color: T.textSecondary, bg: T.surface        },
+              { label: "New",          value: counts.new,         color: T.textMuted,     bg: "transparent"    },
+              { label: "Reviewing",    value: counts.reviewing,   color: T.blue,          bg: T.blueBg         },
+              { label: "Applied",      value: counts.applied,     color: T.green,         bg: T.greenBg        },
+              { label: "Interviewing", value: counts.interviewing, color: T.green,        bg: T.greenBg        },
+              { label: "Offer",        value: counts.offer,       color: T.green,         bg: T.greenBg        },
+              { label: "Passed",       value: counts.passed,      color: T.textMuted,     bg: T.surface        },
+              { label: "Rejected",     value: counts.rejected,    color: T.red,           bg: T.redBg          },
+              { label: "Closed",       value: counts.closed,      color: T.textMuted,     bg: T.surface        },
+            ].filter(s => s.value > 0 || s.label === "Total");
+            return (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, padding: "10px 12px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 8 }}>
+                {stats.map(({ label, value, color, bg }) => (
+                  <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "4px 12px", borderRadius: 5, background: bg, border: `1px solid ${T.borderFaint}`, minWidth: 52 }}>
+                    <span style={{ fontFamily: T.fontMono, fontSize: 15, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</span>
+                    <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, letterSpacing: "0.07em", marginTop: 2 }}>{label.toUpperCase()}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* HERO — top new scored job */}
           {(() => {
             const heroJob = [...supabaseJobs]
