@@ -782,7 +782,6 @@ function ScoreBreakdown({ job }) {
 
 function StatusButtons({ jobId, currentStatus, onStatusChange }) {
   const OPTIONS = [
-    { label: "Reviewed", value: "reviewed", color: T.blue,  bg: T.blueBg,  border: T.blueBorder  },
     { label: "Applied",  value: "applied",  color: T.green, bg: T.greenBg, border: T.greenBorder },
     { label: "Rejected", value: "rejected", color: T.red,   bg: T.redBg,   border: T.redBorder   },
     { label: "Closed",   value: "closed",   color: T.textMuted, bg: T.surface, border: T.border  },
@@ -2083,7 +2082,7 @@ async function doQuickScore(job) {
           {(() => {
             const counts = {
               new:          supabaseJobs.filter(j => j.status === "new").length,
-              reviewing:    supabaseJobs.filter(j => j.status === "reviewing" || j.status === "reviewed").length,
+              reviewing:    supabaseJobs.filter(j => j.status === "reviewing").length,
               applied:      supabaseJobs.filter(j => j.status === "applied").length,
               interviewing: supabaseJobs.filter(j => j.status === "interviewing").length,
               offer:        supabaseJobs.filter(j => j.status === "offer").length,
