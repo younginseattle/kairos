@@ -1,0 +1,37 @@
+name: Check LinkedIn Job Status
+
+on:
+  schedule:
+    # Runs daily at 8am UTC (1am PT) — after overnight ingestion
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (report only, no Supabase writes)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  check:
+    name: Check LinkedIn jobs for closed listings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/package-lock.json
+      - name: Install script dependencies
+        working-directory: scripts
+        run: npm ci
+      - name: Check LinkedIn job status
+        working-directory: scripts
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DRY_RUN:                   ${{ inputs.dry_run || 'false' }}
+          DELAY_MS:                  '1500'
+        run: node check-linkedin-jobs.mjs
