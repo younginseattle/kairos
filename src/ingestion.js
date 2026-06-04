@@ -36,10 +36,8 @@ export const SOURCES = [
   { id: "honeycomb",            ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
   { id: "sumologic",            ats: "greenhouse", tier: 1, domain: "observability"                    },
   { id: "arizeai",              ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
-  { id: "fiddler-ai",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
-  { id: "observeinc",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
-  { id: "galileo",              ats: "rippling",   tier: 1, domain: "observability",  broadFilter: true },
-  { id: "braintrust",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+  // Note: fiddler-ai, observeinc, braintrust (Ashby) and galileo (Rippling) return
+  // "Host not in allowlist" — their boards restrict public API access. Use LinkedIn alerts.
 
   // ── AI / ML platforms (broad filter — any senior PM role) ────
   { id: "anthropic",            ats: "greenhouse", tier: 1, domain: "platform",       broadFilter: true },
