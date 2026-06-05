@@ -433,7 +433,12 @@ export function classifyLocation(locationStr = "", jdText = "") {
 
     const payRangePattern = /(?:base pay|salary|compensation|pay range|range)[^.]*(?:san francisco|new york|boston|chicago|austin|los angeles|seattle|denver|atlanta|miami|dallas|houston|phoenix|portland|cambridge|manhattan|brooklyn)[^.]*/g;
     const aboutPattern = /headquartered in[^.]*\./gi;
-    const tStripped = t.replace(payRangePattern, "").replace(aboutPattern, "");
+    // Strip team/office location context — city mentions that describe where the *team* is, not where *you* work
+    const teamContextPattern = /(?:team|office|offices|hub|region|presence|employees|colleagues|staff)[^.]*(?:across|in|based in|located in|spanning)[^.]*/gi;
+    const acrossPattern = /(?:across|spanning)[^.]*(?:north america|europe|asia|apac|emea|latam|the globe|the world|regions|geographies|time zones)[^.]*/gi;
+    // "based in the U.S." without a specific city = US-wide, no relocation
+    const usWideSignal = /\bbased in(?: the)?\s+(?:u\.?s\.?a?|united states|north america|u\.s\.? or canada|us or canada)\b/i.test(t);
+    const tStripped = t.replace(payRangePattern, "").replace(aboutPattern, "").replace(teamContextPattern, "").replace(acrossPattern, "");
 
     const lines = tStripped.split(/[\n\r]+/).filter(line => {
       const l = line.trim().toLowerCase();
@@ -442,7 +447,8 @@ export function classifyLocation(locationStr = "", jdText = "") {
       return true;
     }).join("\n");
     if (relocationCities.some(city => cityInText(city, lines))) {
-      const hasRemoteOk = lines.includes("remote ok") || lines.includes("remote-ok") ||
+      const hasRemoteOk = usWideSignal ||
+        lines.includes("remote ok") || lines.includes("remote-ok") ||
         lines.includes("fully remote") || lines.includes("work from anywhere") ||
         lines.includes("remote first") || lines.includes("remote-first") ||
         lines.includes("or remote") || lines.includes("or remotely") ||
