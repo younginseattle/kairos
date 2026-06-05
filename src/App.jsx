@@ -167,9 +167,13 @@ function deriveConfidence({ confidence_score, parsed = true, jd_text = "", skill
   return Math.max(15, Math.min(95, b)) / 100;
 }
 
-function calculateFinalScore({ skills_match, experience_match, culture_match, confidence_score, parsed = true, jd_text = "", missing_keywords = [], strategic_gaps = [], location_penalty = 0 }) {
+function calculateFinalScore({ skills_match, experience_match, culture_match, confidence_score, parsed = true, jd_text = "", missing_keywords = [], strategic_gaps = [], location_penalty = 0, recommendation = null, top_candidate_signal = null }) {
   const mk = missing_keywords || [], sg = strategic_gaps || [];
-  const base = ((skills_match ?? 0) + (experience_match ?? 0) + (culture_match ?? 0)) / 3;
+  const base = (
+    (experience_match ?? 0) * 0.40 +
+    (skills_match     ?? 0) * 0.35 +
+    (culture_match    ?? 0) * 0.25
+  );
   let rp = 0;
   if (skills_match == null) rp += 15; if (experience_match == null) rp += 10; if (culture_match == null) rp += 5;
   const penalty = Math.min(rp, 20), adjusted = Math.max(0, base - penalty);
@@ -178,9 +182,11 @@ function calculateFinalScore({ skills_match, experience_match, culture_match, co
   const sp = Math.min(10, (mk.length + sg.length * 1.5) * 1.5);
   const boosted = Math.min(Math.max(0, weighted - sp) + ((base >= 70 && cf >= 0.7 && parsed !== false) ? 8 : 0), 100);
   const scaled = Math.round(100 * Math.pow(boosted / 100, 0.85));
-  // Apply location penalty AFTER scaling — direct point deduction, not weighted
-  const locPenalty = Math.abs(location_penalty); // location_penalty is negative, e.g. -10
-  const final_score = Math.min(Math.max(scaled - locPenalty, 0), parsed === false ? 55 : 100);
+  // Apply location, recommendation, and signal adjustments AFTER scaling
+  const locPenalty = Math.abs(location_penalty);
+  const recAdj = recommendation === "skip" ? -8 : recommendation === "stretch" ? -4 : 0;
+  const sigAdj = top_candidate_signal?.level === "HIGH" ? 5 : top_candidate_signal?.level === "LOW" ? -5 : 0;
+  const final_score = Math.min(Math.max(scaled - locPenalty + recAdj + sigAdj, 0), parsed === false ? 55 : 100);
   return { final_score, _base: Math.round(base), _penalty: penalty, _confidence_pct: Math.round(cf * 100), _stretch_penalty: Math.round(sp), _location_penalty: locPenalty, _capped: parsed === false };
 }
 
@@ -189,15 +195,17 @@ function enrichJob(job) {
   // Classify location — use job.location, falling back to location_score hints
   const locClassification = classifyLocation(job.location || "", jd);
   const scoring = calculateFinalScore({
-    skills_match:     job.skills_match,
-    experience_match: job.experience_match,
-    culture_match:    job.culture_match,
-    confidence_score: job.confidence_score,
-    parsed:           job.parsed ?? true,
-    jd_text:          jd,
-    missing_keywords: mk,
-    strategic_gaps:   sg,
-    location_penalty: locClassification.penalty,
+    skills_match:         job.skills_match,
+    experience_match:     job.experience_match,
+    culture_match:        job.culture_match,
+    confidence_score:     job.confidence_score,
+    parsed:               job.parsed ?? true,
+    jd_text:              jd,
+    missing_keywords:     mk,
+    strategic_gaps:       sg,
+    location_penalty:     locClassification.penalty,
+    recommendation:       job.recommendation,
+    top_candidate_signal: job.top_candidate_signal,
   });
   const cf = deriveConfidence({ confidence_score: job.confidence_score, parsed: job.parsed ?? true, jd_text: jd, skills_match: job.skills_match, experience_match: job.experience_match, culture_match: job.culture_match });
   const pursuit = getPursuitRecommendation({ final_score: scoring.final_score, confidence: cf, missing_keywords: mk, strategic_gaps: sg });
