@@ -10,10 +10,10 @@ import ws from 'ws';
 globalThis.WebSocket = ws;
 const { createClient } = await import('@supabase/supabase-js');
 
-const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env;
-['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'].forEach(k => {
-  if (!process.env[k]) { console.error(`✗ Missing ${k}`); process.exit(1); }
-});
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL) { console.error('✗ Missing VITE_SUPABASE_URL'); process.exit(1); }
+if (!SUPABASE_KEY) { console.error('✗ Missing VITE_SUPABASE_ANON_KEY'); process.exit(1); }
 
 const AUTO_PASS_THRESHOLD = 48;
 
@@ -49,7 +49,7 @@ function calculateFinalScore({ skills_match, experience_match, culture_match, co
 
 // ── Fetch active jobs ────────────────────────────────────────────
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const { data: jobs, error } = await supabase
   .from('jobs')
   .select('id, title, company, status, score, confidence_score, skills_match, experience_match, culture_match, missing_keywords, strategic_gaps, description, recommendation')
@@ -104,7 +104,7 @@ for (const j of below48) {
   const jdLen  = (j.description || '').trim().length;
   const status = (j.status || '').padEnd(11);
   console.log(
-    `${String(j.final_score).padEnd(7)}${String(j.confidence_pct + '%').padEnd(7)}${String(j.base).padEnd(6)}${recStr} ${status}${String(jdLen).padEnd(8)}${j.title} — ${j.company}`
+    `${String(j.final_score).padEnd(7)}${String(j.confidence_pct + '%').padEnd(7)}${String(j.base).padEnd(6)}${recStr} ${status}${String(jdLen).padEnd(8)}${j.title} — ${j.company}${flag}`
   );
 }
 
