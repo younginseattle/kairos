@@ -567,6 +567,10 @@ export async function runJobIngestion(
       if (evaluation) {
         evaluatedCount++;
         log(`  ✓ Evaluated: "${job.title}" — score ${evaluation.overall_score}`);
+        if (evaluation.recommendation === "skip") {
+          await supabaseClient.from("jobs").update({ status: "pass" }).eq("id", insertedJob.id);
+          log(`  → Auto-passed (Claude: skip, score ${evaluation.overall_score})`);
+        }
       }
     }
   }
