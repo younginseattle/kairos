@@ -1525,7 +1525,7 @@ async function doQuickScore(job) {
       // applied_at column may not exist yet — fall back to status-only update
       const { error: fallbackError } = await supabase.from('jobs').update({ status: newStatus }).eq('id', jobId);
       if (fallbackError) return;
-      setSupabaseJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
+      setSupabaseJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: newStatus, ...(newStatus === "applied" && !j.applied_at ? { applied_at: new Date().toISOString() } : {}) } : j));
       return;
     }
     setSupabaseJobs(prev => prev.map(j => j.id === jobId ? { ...j, ...updates } : j));
