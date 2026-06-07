@@ -1538,12 +1538,18 @@ async function doQuickScore(job) {
       .sort((a, b) => new Date(a.applied_at || a.created_at) - new Date(b.applied_at || b.created_at));
   }
 
+  function fmtAppliedDate(isoStr) {
+    if (!isoStr) return "";
+    const [y, m, d] = isoStr.split("T")[0].split("-");
+    return `${+m}/${+d}/${y}`;
+  }
+
   function doCopyReportCsv() {
     const jobs = getAppliedJobs();
     const rows = [
       ["Date Applied", "Company", "Position", "Status"],
       ...jobs.map(j => [
-        new Date(j.applied_at || j.created_at).toLocaleDateString(),
+        fmtAppliedDate(j.applied_at || j.created_at),
         j.company || "",
         j.title || "",
         (j.status || "").charAt(0).toUpperCase() + (j.status || "").slice(1),
@@ -1561,7 +1567,7 @@ async function doQuickScore(job) {
     const header = `JOB SEARCH LOG — WA Unemployment\n${generated}\n\n${"DATE".padEnd(14)}${"COMPANY".padEnd(28)}POSITION`;
     const divider = "─".repeat(78);
     const lines = jobs.map(j => {
-      const date = new Date(j.applied_at || j.created_at).toLocaleDateString().padEnd(14);
+      const date = fmtAppliedDate(j.applied_at || j.created_at).padEnd(14);
       const company = (j.company || "").slice(0, 27).padEnd(28);
       return `${date}${company}${j.title || ""}`;
     });
@@ -2235,7 +2241,7 @@ async function doQuickScore(job) {
                       {jobs.map(j => (
                         <tr key={j.id} style={{ borderBottom: `1px solid ${T.borderFaint}` }}>
                           <td style={{ padding: "5px 8px 5px 0", color: T.textSecondary, whiteSpace: "nowrap" }}>
-                            {new Date(j.applied_at || j.created_at).toLocaleDateString()}
+                            {fmtAppliedDate(j.applied_at || j.created_at)}
                             {!j.applied_at && <span style={{ color: T.textMuted, fontSize: 8 }}> *</span>}
                           </td>
                           <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary }}>{j.company || "—"}</td>
