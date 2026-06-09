@@ -45,8 +45,9 @@ function parseCsvLine(line) {
 }
 
 const headers = parseCsvLine(headerLine).map(h =>
-  h.replace(/"/g, "").toLowerCase().replace(/\s+/g, "_")
+  h.replace(/"/g, "").replace(/^﻿/, "").trim().toLowerCase().replace(/\s+/g, "_")
 );
+console.log("Headers detected:", headers);
 
 function getSeniority(position) {
   const p = (position || "").toLowerCase();
@@ -134,14 +135,20 @@ for (const line of dataLines) {
   const industry = getIndustry(company);
   const priority = getPriorityScore(seniority, industry, fn);
 
+  // Fuzzy field lookup — handles header variations across LinkedIn export formats
+  const get = (...keys) => {
+    for (const k of keys) { if (obj[k]) return obj[k]; }
+    return "";
+  };
+
   connections.push({
-    firstName: obj.first_name || "",
-    lastName: obj.last_name || "",
-    url: obj.url || "",
-    email: obj.email_address || "",
+    firstName: get("first_name", "firstname", "first"),
+    lastName: get("last_name", "lastname", "last"),
+    url: get("url", "linkedin_url", "profile_url"),
+    email: get("email_address", "email", "e-mail"),
     company,
     position,
-    connectedOn: obj.connected_on || "",
+    connectedOn: get("connected_on", "connection_date", "connected"),
     seniority,
     function: fn,
     industry,
