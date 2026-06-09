@@ -18,11 +18,12 @@ const ROOT = join(__dirname, "..", "..");
 const csvText = readFileSync(join(ROOT, "Connections.csv"), "utf8");
 const lines = csvText.split("\n");
 
-// Line 0: LinkedIn export note — skip
-// Line 1: column headers
-// Line 2+: data
-const headerLine = lines[1];
-const dataLines = lines.slice(2);
+// LinkedIn exports vary: disclaimer is 1-2 lines before the actual headers.
+// Find the header line by looking for "First Name".
+const headerIdx = lines.findIndex(l => /first.?name/i.test(l));
+if (headerIdx === -1) { console.error("Could not find header row in CSV"); process.exit(1); }
+const headerLine = lines[headerIdx];
+const dataLines = lines.slice(headerIdx + 1);
 
 function parseCsvLine(line) {
   const result = [];
