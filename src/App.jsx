@@ -530,10 +530,10 @@ export function classifyLocation(locationStr = "", jdText = "") {
             : "office";
           return { tier: "remote", penalty: 0, label: `Remote (${label} office optional)` };
         }
-        // Multi-location posting: location metadata is a non-Seattle city, but JD
-        // lists a separate Seattle pay range → Seattle is a valid work location.
-        const jdHasSeattlePayRange = /(?:position in seattle|range for[^.]*seattle|seattle[^.]*\$\d|total cash[^.]*seattle)/i.test(jdText || "");
-        if (jdHasSeattlePayRange) {
+        // Multi-location posting: ATS location shows another city but JD mentions
+        // Seattle area → no relocation required.
+        const jdMentionsSeattle = /\bseattle\b|\bredmond,?\s*wa\b|\bbellevue,?\s*wa\b/i.test(jdText || "");
+        if (jdMentionsSeattle) {
           return { tier: "local", penalty: 0, label: "Seattle area (multi-location posting)" };
         }
         const matchedCity = relocationCities.find(city => loc.includes(city));
