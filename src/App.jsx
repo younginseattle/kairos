@@ -530,6 +530,12 @@ export function classifyLocation(locationStr = "", jdText = "") {
             : "office";
           return { tier: "remote", penalty: 0, label: `Remote (${label} office optional)` };
         }
+        // Multi-location posting: location metadata is a non-Seattle city, but JD
+        // lists a separate Seattle pay range → Seattle is a valid work location.
+        const jdHasSeattlePayRange = /(?:position in seattle|range for[^.]*seattle|seattle[^.]*\$\d|total cash[^.]*seattle)/i.test(jdText || "");
+        if (jdHasSeattlePayRange) {
+          return { tier: "local", penalty: 0, label: "Seattle area (multi-location posting)" };
+        }
         const matchedCity = relocationCities.find(city => loc.includes(city));
         const label = matchedCity.charAt(0).toUpperCase() + matchedCity.slice(1).split(",")[0];
         return { tier: "relocation", penalty: -10, label: "Relocation required (" + label + ")" };
