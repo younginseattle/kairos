@@ -531,10 +531,13 @@ export function classifyLocation(locationStr = "", jdText = "") {
           return { tier: "remote", penalty: 0, label: `Remote (${label} office optional)` };
         }
         // Multi-location posting: ATS location shows another city but JD mentions
-        // Seattle area → no relocation required.
+        // Seattle area or remote → no relocation required.
         const jdMentionsSeattle = /\bseattle\b|\bredmond,?\s*wa\b|\bbellevue,?\s*wa\b/i.test(jdText || "");
         if (jdMentionsSeattle) {
           return { tier: "local", penalty: 0, label: "Seattle area (multi-location posting)" };
+        }
+        if (/\bremote\b/i.test(jdText || "")) {
+          return { tier: "remote", penalty: 0, label: "Remote" };
         }
         const matchedCity = relocationCities.find(city => loc.includes(city));
         const label = matchedCity.charAt(0).toUpperCase() + matchedCity.slice(1).split(",")[0];
