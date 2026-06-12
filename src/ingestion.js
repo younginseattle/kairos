@@ -202,6 +202,31 @@ Core strengths:
 - Automation and AI-enabled product workflows`;
 
 // ─────────────────────────────────────────────────────────────────
+// LOCATION FILTER — US only
+// ─────────────────────────────────────────────────────────────────
+
+const NON_US_COUNTRIES = [
+  "united kingdom", "england", "scotland", "wales", ", uk",
+  "canada", "germany", "netherlands", "france", "spain", "italy",
+  "australia", "new zealand", "ireland", "india", "singapore",
+  "japan", "south korea", "brazil", "mexico", "sweden", "norway",
+  "denmark", "finland", "switzerland", "austria", "belgium",
+  "poland", "czech", "hungary", "romania", "portugal",
+  "israel", "dubai", "uae", "south africa", "philippines",
+];
+
+/**
+ * Returns true if the job location is in the US (or remote with no country qualifier).
+ * Null / empty location is assumed remote/US.
+ */
+export function isUSJob(job) {
+  const loc = (job.location || "").toLowerCase().trim();
+  if (!loc) return true;
+  if (NON_US_COUNTRIES.some(c => loc.includes(c))) return false;
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // LOGGING
 // ─────────────────────────────────────────────────────────────────
 
@@ -518,7 +543,7 @@ export async function runJobIngestion(
 
   // 2. Filter for relevant roles — pass source config so broadFilter companies work
   const relevantJobs = fetchResults.flatMap(({ source, jobs }) =>
-    jobs.filter(job => isRelevantJob(job, source))
+    jobs.filter(job => isRelevantJob(job, source) && isUSJob(job))
   );
   log(`Relevant after filter: ${relevantJobs.length}`);
 
