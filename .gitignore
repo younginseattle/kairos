@@ -3,3 +3,7 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# Google OAuth credentials — never commit these
+scripts/google-credentials.json
+scripts/google-token.json
