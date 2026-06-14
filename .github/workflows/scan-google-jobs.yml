@@ -46,7 +46,8 @@ jobs:
           }' > scripts/google-credentials.json
           echo '{
             "refresh_token": "${{ secrets.GOOGLE_REFRESH_TOKEN }}",
-            "token_type": "Bearer"
+            "token_type": "Bearer",
+            "expiry_date": 0
           }' > scripts/google-token.json
 
       - name: Scan Google Careers emails
