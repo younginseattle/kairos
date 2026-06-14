@@ -1,0 +1,61 @@
+name: Scan Google Careers Emails
+
+on:
+  schedule:
+    # Runs every Monday and Thursday at 9am UTC (2am PT)
+    - cron: '0 9 * * 1,4'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (report only, no Supabase writes)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      days:
+        description: 'How many days back to scan'
+        required: false
+        default: '7'
+
+jobs:
+  scan:
+    name: Scan Google Careers job alert emails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Install script dependencies
+        working-directory: scripts
+        run: npm ci
+
+      - name: Write Google OAuth credentials
+        run: |
+          echo '{
+            "installed": {
+              "client_id": "${{ secrets.GOOGLE_CLIENT_ID }}",
+              "client_secret": "${{ secrets.GOOGLE_CLIENT_SECRET }}",
+              "redirect_uris": ["http://localhost:3456/oauth2callback"],
+              "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+              "token_uri": "https://oauth2.googleapis.com/token"
+            }
+          }' > scripts/google-credentials.json
+          echo '{
+            "refresh_token": "${{ secrets.GOOGLE_REFRESH_TOKEN }}",
+            "token_type": "Bearer"
+          }' > scripts/google-token.json
+
+      - name: Scan Google Careers emails
+        env:
+          VITE_SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DRY_RUN:                ${{ inputs.dry_run || 'false' }}
+        run: |
+          DAYS=${{ inputs.days || '7' }}
+          ARGS="--days=$DAYS"
+          if [ "$DRY_RUN" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          node --env-file=/dev/null scripts/scan-google-jobs.mjs $ARGS
