@@ -57,8 +57,8 @@ const REDIRECT_URI = 'http://localhost:3456/oauth2callback';
 async function getAccessToken() {
   if (existsSync(TOKEN_FILE)) {
     const token = JSON.parse(readFileSync(TOKEN_FILE, 'utf8'));
-    // Refresh if expired
-    if (token.expiry_date && Date.now() > token.expiry_date - 60000) {
+    // Refresh if missing access token or expired
+    if (!token.access_token || (token.expiry_date && Date.now() > token.expiry_date - 60000)) {
       const res = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
