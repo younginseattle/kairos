@@ -175,33 +175,36 @@ function shouldSkipLine(line) {
 function parseJobsFromBody(body) {
   const jobs = [];
 
-  // Split on horizontal rules (10+ dashes) that separate job blocks
-  const sections = body.split(/\n-{10,}\n/);
+  // Find every LinkedIn job URL — handles /jobs/view/ and /comm/jobs/view/
+  // with or without tracking params or trailing slash
+  const urlRe = /https?:\/\/(?:www\.)?linkedin\.com\/comm\/jobs\/view\/(\d+)[^\s]*/g;
+  let m;
 
-  for (const section of sections) {
-    // LinkedIn job ID is the canonical dedup key
-    const idMatch = section.match(/\/jobs\/view\/(\d+)\//);
-    if (!idMatch) continue;
-
-    const jobId = idMatch[1];
+  while ((m = urlRe.exec(body)) !== null) {
+    const jobId = m[1];
     const url   = `https://www.linkedin.com/jobs/view/${jobId}/`;
 
-    const lines = section
+    // Grab the text block before this URL (up to 600 chars back)
+    const before = body.slice(Math.max(0, m.index - 600), m.index);
+
+    // Split into non-empty, non-noise lines — take the last few
+    const lines = before
       .split(/\r?\n/)
       .map(l => l.trim())
-      .filter(l => l.length > 0 && !shouldSkipLine(l));
+      .filter(l => l.length > 2 && l.length < 150 && !shouldSkipLine(l)
+                   && !/^https?:\/\//i.test(l));   // skip any URL lines
 
     if (lines.length < 2) continue;
 
-    const title    = lines[0];
-    const company  = lines[1];
-    const location = lines[2] || 'United States';
+    // The last meaningful lines before the URL are title / company / location
+    const location = lines[lines.length - 1] || 'United States';
+    const company  = lines[lines.length - 2] || '';
+    const title    = lines[lines.length - 3] || lines[lines.length - 2];
 
-    // Basic sanity — skip if title looks like a nav/footer line
-    if (title.length > 120 || company.length > 80) continue;
-
+    if (!title || title.length > 120 || company.length > 100) continue;
     if (!isRelevantTitle(title)) continue;
     if (!isUSLocation(location)) continue;
+
     jobs.push({ title, company, location, url });
   }
 
