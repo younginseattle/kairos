@@ -30,22 +30,60 @@ const LOOKBACK_HOURS  = INTERVAL_HOURS + 1; // overlap to prevent gaps
 const GMAIL_SENDERS   = 'from:(jobalerts-noreply@linkedin.com OR googlealerts-noreply@google.com)';
 const SEARCH_QUERY    = `${GMAIL_SENDERS} newer_than:${LOOKBACK_HOURS}h`;
 
-const {
-  GMAIL_CLIENT_ID,
-  GMAIL_CLIENT_SECRET,
-  GMAIL_REFRESH_TOKEN,
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-} = process.env;
+// Accept GOOGLE_* or GMAIL_* env vars interchangeably
+const GMAIL_CLIENT_ID     = process.env.GMAIL_CLIENT_ID     || process.env.GOOGLE_CLIENT_ID;
+const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || process.env.GOOGLE_REFRESH_TOKEN;
+const SUPABASE_URL        = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-function requireEnv(name) {
-  if (!process.env[name]) {
-    console.error(`✗ Missing required environment variable: ${name}`);
-    process.exit(1);
-  }
+if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN) {
+  console.error('✗ Missing Gmail credentials (GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET / GMAIL_REFRESH_TOKEN)');
+  process.exit(1);
 }
-['GMAIL_CLIENT_ID','GMAIL_CLIENT_SECRET','GMAIL_REFRESH_TOKEN',
- 'SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY'].forEach(requireEnv);
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('✗ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(1);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Title / location filter
+// ─────────────────────────────────────────────────────────────────
+
+const SENIORITY_KEYWORDS = [
+  'director', 'head of product', 'vp of product', 'vp product',
+  'vice president of product', 'vice president, product',
+  'group product manager', 'group pm',
+  'staff product manager', 'staff pm',
+  'principal product manager', 'principal pm',
+];
+const EXCLUSION_KEYWORDS = [
+  'marketing', 'engineer', 'developer', 'designer', 'analyst',
+  'counsel', 'finance', 'sales', 'recruiter', 'data science',
+  'research', 'operations', 'security', 'design',
+];
+const NON_US_COUNTRIES = [
+  'united kingdom', 'england', 'scotland', 'wales', ', uk',
+  'canada', 'germany', 'netherlands', 'france', 'spain', 'italy',
+  'australia', 'new zealand', 'ireland', 'india', 'singapore',
+  'japan', 'south korea', 'brazil', 'mexico', 'sweden', 'norway',
+  'denmark', 'finland', 'switzerland', 'austria', 'belgium',
+  'poland', 'czech', 'hungary', 'romania', 'portugal',
+  'israel', 'dubai', 'uae', 'south africa',
+];
+
+function isRelevantTitle(title) {
+  const t = title.toLowerCase();
+  if (!t.includes('product')) return false;
+  if (EXCLUSION_KEYWORDS.some(kw => t.includes(kw))) return false;
+  return SENIORITY_KEYWORDS.some(kw => t.includes(kw));
+}
+
+function isUSLocation(location) {
+  const loc = (location || '').toLowerCase();
+  if (!loc) return true;
+  return !NON_US_COUNTRIES.some(c => loc.includes(c));
+}
 
 // ─────────────────────────────────────────────────────────────────
 // Gmail client
@@ -162,6 +200,8 @@ function parseJobsFromBody(body) {
     // Basic sanity — skip if title looks like a nav/footer line
     if (title.length > 120 || company.length > 80) continue;
 
+    if (!isRelevantTitle(title)) continue;
+    if (!isUSLocation(location)) continue;
     jobs.push({ title, company, location, url });
   }
 
