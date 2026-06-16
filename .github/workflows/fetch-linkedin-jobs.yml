@@ -1,0 +1,39 @@
+name: Fetch LinkedIn Job Alert Emails
+
+on:
+  schedule:
+    # Runs every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'How many hours back to scan'
+        required: false
+        default: '7'
+
+jobs:
+  fetch:
+    name: Scan LinkedIn job alert emails from Gmail
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Install script dependencies
+        working-directory: scripts
+        run: npm ci
+
+      - name: Fetch and insert LinkedIn job alerts
+        working-directory: scripts
+        env:
+          GOOGLE_CLIENT_ID:          ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET:      ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN:      ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FETCH_INTERVAL_HOURS:      ${{ inputs.hours || '6' }}
+        run: node fetch-jobs.js
