@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from './supabaseClient'
 import { runJobIngestion, SOURCES, isRelevantJob } from './ingestion.js'
+import NetworkView from './NetworkView.jsx'
 
 /* ═══════════════════════════════════════════════════════════════════
    JOB SEARCH AGENT
@@ -1761,7 +1762,7 @@ async function doQuickScore(job) {
 
   const grid2 = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 };
   const grid3 = { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 };
-  const TABS = [{ key: "discover", label: "Search" }, { key: "manual", label: "Evaluate" }, { key: "saved", label: "Pipeline" }, { key: "tailor", label: "Tailor" }];
+  const TABS = [{ key: "discover", label: "Search" }, { key: "manual", label: "Evaluate" }, { key: "saved", label: "Pipeline" }, { key: "tailor", label: "Tailor" }, { key: "network", label: "Connections" }];
 
   // Domain badge colors
   const DOMAIN_COLORS = { observability: { color: T.green, bg: T.greenBg, border: T.greenBorder }, infrastructure: { color: T.blue, bg: T.blueBg, border: T.blueBorder }, platform: { color: T.amber, bg: T.amberBg, border: T.amberBorder }, defense: { color: "#f97316", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.4)" }, space: { color: "#818cf8", bg: "rgba(129,140,248,0.12)", border: "rgba(129,140,248,0.4)" } };
@@ -2533,6 +2534,8 @@ async function doQuickScore(job) {
           <TailoredResumePanel result={tailorResult} onDownload={doDownloadTxt} downloading={downloading} />
         </>
       )}
+
+      {tab === "network" && <NetworkView T={T} />}
     </div>
   );
 }
