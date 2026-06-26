@@ -95,13 +95,27 @@ function buildGmailClient() {
   return google.gmail({ version: 'v1', auth });
 }
 
+async function withRetry(fn, label, maxAttempts = 4) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isNetworkErr = /premature close|econnreset|econnrefused|etimedout|socket hang up|network/i.test(err.message);
+      if (attempt === maxAttempts || !isNetworkErr) throw err;
+      const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+      console.warn(`  ⚠ ${label} failed (attempt ${attempt}/${maxAttempts}): ${err.message} — retrying in ${delay / 1000}s`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
 async function fetchEmailBodies(gmail) {
   let threads;
   try {
-    const res = await gmail.users.threads.list({
-      userId: 'me',
-      q:      SEARCH_QUERY,
-    });
+    const res = await withRetry(
+      () => gmail.users.threads.list({ userId: 'me', q: SEARCH_QUERY }),
+      'Gmail threads.list'
+    );
     threads = res.data.threads || [];
   } catch (err) {
     console.error('✗ Gmail threads.list failed:', err.message);
@@ -113,11 +127,10 @@ async function fetchEmailBodies(gmail) {
   const bodies = [];
   for (const { id } of threads) {
     try {
-      const res = await gmail.users.threads.get({
-        userId: 'me',
-        id,
-        format: 'full',
-      });
+      const res = await withRetry(
+        () => gmail.users.threads.get({ userId: 'me', id, format: 'full' }),
+        `thread ${id}`
+      );
       const firstMessage = res.data.messages?.[0];
       if (!firstMessage) continue;
 
