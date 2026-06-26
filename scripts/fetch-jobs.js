@@ -12,8 +12,7 @@
  *   FETCH_INTERVAL_HOURS  (optional, default 6)
  */
 
-import { google } from 'googleapis';
-import ws         from 'ws';
+import ws from 'ws';
 
 // Must be set before @supabase/supabase-js is loaded — it checks
 // globalThis.WebSocket at import time and throws on Node < 22 without it.
@@ -86,54 +85,61 @@ function isUSLocation(location) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Gmail client
+// Gmail via native fetch (avoids googleapis HTTP client issues in CI)
 // ─────────────────────────────────────────────────────────────────
 
-function buildGmailClient() {
-  const auth = new google.auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET);
-  auth.setCredentials({ refresh_token: GMAIL_REFRESH_TOKEN });
-  return google.gmail({ version: 'v1', auth });
+async function getAccessToken() {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id:     GMAIL_CLIENT_ID,
+      client_secret: GMAIL_CLIENT_SECRET,
+      refresh_token: GMAIL_REFRESH_TOKEN,
+      grant_type:    'refresh_token',
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(`OAuth token refresh failed: ${data.error} — ${data.error_description}`);
+  return data.access_token;
 }
 
-async function withRetry(fn, label, maxAttempts = 4) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const isNetworkErr = /premature close|econnreset|econnrefused|etimedout|socket hang up|network/i.test(err.message);
-      if (attempt === maxAttempts || !isNetworkErr) throw err;
-      const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-      console.warn(`  ⚠ ${label} failed (attempt ${attempt}/${maxAttempts}): ${err.message} — retrying in ${delay / 1000}s`);
-      await new Promise(r => setTimeout(r, delay));
-    }
+async function gmailGet(accessToken, path, params = {}) {
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me${path}?` + new URLSearchParams(params);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gmail API ${res.status}: ${body}`);
   }
+  return res.json();
 }
 
-async function fetchEmailBodies(gmail) {
-  let threads;
+async function fetchEmailBodies() {
+  let accessToken;
   try {
-    const res = await withRetry(
-      () => gmail.users.threads.list({ userId: 'me', q: SEARCH_QUERY }),
-      'Gmail threads.list'
-    );
-    threads = res.data.threads || [];
+    accessToken = await getAccessToken();
+  } catch (err) {
+    console.error('✗ OAuth token refresh failed:', err.message);
+    return [];
+  }
+
+  let threadList;
+  try {
+    threadList = await gmailGet(accessToken, '/threads', { q: SEARCH_QUERY });
   } catch (err) {
     console.error('✗ Gmail threads.list failed:', err.message);
     return [];
   }
 
+  const threads = threadList.threads || [];
   console.log(`  Found ${threads.length} matching thread(s)`);
 
   const bodies = [];
   for (const { id } of threads) {
     try {
-      const res = await withRetry(
-        () => gmail.users.threads.get({ userId: 'me', id, format: 'full' }),
-        `thread ${id}`
-      );
-      const firstMessage = res.data.messages?.[0];
+      const thread = await gmailGet(accessToken, `/threads/${id}`, { format: 'full' });
+      const firstMessage = thread.messages?.[0];
       if (!firstMessage) continue;
-
       const body = extractPlainText(firstMessage.payload);
       if (body) bodies.push(body);
     } catch (err) {
@@ -269,12 +275,11 @@ async function main() {
   console.log(`\n◆ Kairos job fetch — lookback ${LOOKBACK_HOURS}h`);
   console.log(`  Query: ${SEARCH_QUERY}\n`);
 
-  const gmail    = buildGmailClient();
   const supabase = buildSupabaseClient();
 
   // 1. Fetch email bodies
   console.log('── Fetching Gmail threads…');
-  const bodies = await fetchEmailBodies(gmail);
+  const bodies = await fetchEmailBodies();
   console.log(`  Fetched ${bodies.length} email body/bodies\n`);
 
   // 2. Parse all jobs across all emails
