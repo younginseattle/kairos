@@ -87,11 +87,6 @@ export const SOURCES = [
 // FILTER CONFIGURATION
 // ─────────────────────────────────────────────────────────────────
 
-/**
- * Title must include a seniority signal AND "product".
- * "principal" intentionally excluded — too often matches
- * Principal Engineer / Principal Marketing roles.
- */
 const SENIORITY_KEYWORDS = [
   "director",
   "head of product",
@@ -103,6 +98,8 @@ const SENIORITY_KEYWORDS = [
   "group pm",
   "staff product manager",
   "staff pm",
+  "principal product manager",
+  "principal pm",
 ];
 
 const DOMAIN_KEYWORD = "product";
@@ -342,14 +339,14 @@ export function isRelevantJob(job, source = null) {
 
   // Broad filter: for top AI/dev-tool companies, accept any senior PM role
   // regardless of exact title — catches "Product Manager L7", "PM, Core" etc.
+  // "manager" alone is intentionally excluded — too many non-senior PM roles slip through.
   const useBroadFilter = source?.broadFilter === true;
   if (useBroadFilter) {
     const hasProduct  = title.includes("product");
     const hasSenior   = title.includes("senior") || title.includes("staff") ||
                         title.includes("principal") || title.includes("director") ||
                         title.includes("lead") || title.includes("head") ||
-                        title.includes("group") || title.includes("vp") ||
-                        title.includes("manager"); // include plain PM roles
+                        title.includes("group") || title.includes("vp");
     return hasProduct && hasSenior;
   }
 
@@ -476,6 +473,8 @@ export async function runClaudeEvaluation(supabaseClient, job, anthropicApiKey, 
         strengths:               evaluation.strengths               || [],
         gaps:                    evaluation.gaps                    || [],
         quick_wins:              evaluation.quick_wins              || [],
+        missing_keywords:        evaluation.missing_keywords        || [],
+        strategic_gaps:          evaluation.strategic_gaps          || [],
         verdict:                 evaluation.verdict,
         skills_match:            evaluation.skills_match,
         experience_match:        evaluation.experience_match,
@@ -486,6 +485,8 @@ export async function runClaudeEvaluation(supabaseClient, job, anthropicApiKey, 
         location_score:          evaluation.location_score,
         company_score:           evaluation.company_score,
         confidence_score:        evaluation.confidence,
+        score_explanation:       evaluation.score_explanation       || null,
+        top_candidate_signal:    evaluation.top_candidate_signal    || null,
       })
       .eq("id", job.id);
     if (error) logError(`Failed to write evaluation for job ${job.id}: ${error.message}`);
@@ -592,9 +593,9 @@ export async function runJobIngestion(
       if (evaluation) {
         evaluatedCount++;
         log(`  ✓ Evaluated: "${job.title}" — score ${evaluation.overall_score}`);
-        if (evaluation.recommendation === "skip") {
+        if (evaluation.recommendation === "skip" || evaluation.overall_score < 55) {
           await supabaseClient.from("jobs").update({ status: "pass" }).eq("id", insertedJob.id);
-          log(`  → Auto-passed (Claude: skip, score ${evaluation.overall_score})`);
+          log(`  → Auto-passed (score ${evaluation.overall_score}, ${evaluation.recommendation})`);
         }
       }
     }
