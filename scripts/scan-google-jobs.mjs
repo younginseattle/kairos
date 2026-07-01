@@ -157,11 +157,37 @@ const EXCLUSION_KEYWORDS = [
 ];
 const DOMAIN_KEYWORD = 'product';
 
+const NON_US_COUNTRIES = [
+  'united kingdom', 'england', 'scotland', 'wales', ', uk',
+  'canada', 'germany', 'netherlands', 'france', 'spain', 'italy',
+  'australia', 'new zealand', 'ireland', 'india', 'singapore',
+  'japan', 'south korea', 'brazil', 'mexico', 'sweden', 'norway',
+  'denmark', 'finland', 'switzerland', 'austria', 'belgium',
+  'poland', 'czech', 'hungary', 'romania', 'portugal',
+  'israel', 'dubai', 'uae', 'south africa', 'philippines',
+];
+
+const BLOCKED_URL_DOMAINS = [
+  'theladders.com', 'ladder.io', 'ziprecruiter.com',
+  'simplyhired.com', 'careerbuilder.com', 'monster.com', 'dice.com',
+];
+
 function isRelevantTitle(title) {
   const t = title.toLowerCase();
   if (!t.includes(DOMAIN_KEYWORD)) return false;
   if (EXCLUSION_KEYWORDS.some(kw => t.includes(kw))) return false;
   return SENIORITY_KEYWORDS.some(kw => t.includes(kw));
+}
+
+function isUSLocation(location) {
+  const loc = (location || '').toLowerCase();
+  if (!loc) return true;
+  return !NON_US_COUNTRIES.some(c => loc.includes(c));
+}
+
+function isAllowedURL(url) {
+  if (!url) return true;
+  return !BLOCKED_URL_DOMAINS.some(d => url.toLowerCase().includes(d));
 }
 
 // ── Parse Google Careers email HTML ──────────────────────────
@@ -225,7 +251,7 @@ for (const { id } of messages) {
   for (const job of jobs) {
     if (seenUrls.has(job.url)) continue;
     seenUrls.add(job.url);
-    if (isRelevantTitle(job.title)) candidates.push(job);
+    if (isRelevantTitle(job.title) && isUSLocation(job.location) && isAllowedURL(job.url)) candidates.push(job);
   }
 }
 

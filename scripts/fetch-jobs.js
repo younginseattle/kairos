@@ -71,6 +71,16 @@ const NON_US_COUNTRIES = [
   'israel', 'dubai', 'uae', 'south africa',
 ];
 
+const BLOCKED_URL_DOMAINS = [
+  'theladders.com',
+  'ladder.io',
+  'ziprecruiter.com',
+  'simplyhired.com',
+  'careerbuilder.com',
+  'monster.com',
+  'dice.com',
+];
+
 function isRelevantTitle(title) {
   const t = title.toLowerCase();
   if (!t.includes('product')) return false;
@@ -82,6 +92,12 @@ function isUSLocation(location) {
   const loc = (location || '').toLowerCase();
   if (!loc) return true;
   return !NON_US_COUNTRIES.some(c => loc.includes(c));
+}
+
+function isAllowedURL(url) {
+  if (!url) return true;
+  const u = url.toLowerCase();
+  return !BLOCKED_URL_DOMAINS.some(d => u.includes(d));
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -223,6 +239,7 @@ function parseJobsFromBody(body) {
     if (!title || title.length > 120 || company.length > 100) continue;
     if (!isRelevantTitle(title)) continue;
     if (!isUSLocation(location)) continue;
+    if (!isAllowedURL(url)) continue;
 
     jobs.push({ title, company, location, url });
   }

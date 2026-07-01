@@ -212,14 +212,49 @@ const NON_US_COUNTRIES = [
   "israel", "dubai", "uae", "south africa", "philippines",
 ];
 
+// Domains that should never appear in job URLs — job aggregators and
+// non-primary sources that don't represent direct employer postings.
+const BLOCKED_URL_DOMAINS = [
+  "theladders.com",
+  "ladder.io",
+  "ziprecruiter.com",
+  "simplyhired.com",
+  "careerbuilder.com",
+  "monster.com",
+  "dice.com",
+];
+
+/**
+ * Returns false if the job URL is from a blocked aggregator domain.
+ */
+function isAllowedURL(url) {
+  if (!url) return true;
+  const u = url.toLowerCase();
+  return !BLOCKED_URL_DOMAINS.some(d => u.includes(d));
+}
+
 /**
  * Returns true if the job location is in the US (or remote with no country qualifier).
- * Null / empty location is assumed remote/US.
+ * When location is empty/null/"remote", also scans the description for explicit
+ * non-US country requirements to catch roles where Greenhouse omits the location field.
  */
 export function isUSJob(job) {
   const loc = (job.location || "").toLowerCase().trim();
-  if (!loc) return true;
-  if (NON_US_COUNTRIES.some(c => loc.includes(c))) return false;
+
+  // If location is clearly non-US, reject immediately
+  if (loc && NON_US_COUNTRIES.some(c => loc.includes(c))) return false;
+
+  // If location is absent or generic ("remote"), scan description for explicit
+  // non-US country mentions that indicate a geographic requirement
+  if (!loc || loc === "remote") {
+    const desc = (job.description || "").toLowerCase();
+    // Only reject when the country appears near a location-requirement signal
+    const nonUSInDesc = NON_US_COUNTRIES.some(country =>
+      new RegExp(`(locat|based|office|headquarter|must reside|work from).{0,60}${country}|${country}.{0,60}(locat|based|office|headquarter|only)`, "i").test(desc)
+    );
+    if (nonUSInDesc) return false;
+  }
+
   return true;
 }
 
@@ -544,7 +579,7 @@ export async function runJobIngestion(
 
   // 2. Filter for relevant roles — pass source config so broadFilter companies work
   const relevantJobs = fetchResults.flatMap(({ source, jobs }) =>
-    jobs.filter(job => isRelevantJob(job, source) && isUSJob(job))
+    jobs.filter(job => isRelevantJob(job, source) && isUSJob(job) && isAllowedURL(job.url))
   );
   log(`Relevant after filter: ${relevantJobs.length}`);
 
