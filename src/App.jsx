@@ -1474,6 +1474,34 @@ async function doQuickScore(job) {
     setEvalLoading(false);
   }
 
+  async function doSaveWithoutEval() {
+    if (!manualTitle.trim() && !manualCompany.trim()) {
+      setEvalError("Add at least a title or company name before saving.");
+      return;
+    }
+    setSaving(true); setEvalError("");
+    try {
+      const fields = {
+        title:       manualTitle.trim() || 'Untitled Role',
+        company:     manualCompany.trim() || '',
+        url:         manualUrl.trim() || '',
+        location:    manualLocation.trim() || '',
+        description: manualJd.trim() || '',
+        source:      'manual',
+        status:      'reviewing',
+      };
+      if (manualUrl.trim()) {
+        const { data: existing } = await supabase.from('jobs').select('id').eq('url', manualUrl.trim()).maybeSingle();
+        if (existing) { setEvalError("This role is already in your pipeline."); setSaving(false); return; }
+      }
+      const { data, error } = await supabase.from('jobs').insert(fields).select().single();
+      if (error) throw new Error(error.message);
+      setSupabaseJobs(prev => [{ ...fields, id: data?.id || crypto.randomUUID(), created_at: new Date().toISOString() }, ...prev]);
+      setManualSaved(true);
+    } catch (e) { setEvalError(`Save failed: ${e.message}`); }
+    setSaving(false);
+  }
+
   async function doSave() {
     setSaving(true); setEvalError("");
     try {
@@ -2080,17 +2108,24 @@ async function doQuickScore(job) {
         <>
           <Card>
             <div style={{ marginBottom: 10 }}>
-              <input className="jsa-input" value={manualUrl} onChange={e => setManualUrl(e.target.value)} placeholder="Job URL (https://…)" style={{ fontSize: 14 }} />
+              <input className="jsa-input" value={manualUrl} onChange={e => setManualUrl(e.target.value)} placeholder="Job URL — optional (leave blank for recruiter briefs)" style={{ fontSize: 14 }} />
             </div>
             <div style={{ ...grid3, marginBottom: 10 }}>
-              <input className="jsa-input" value={manualTitle} onChange={e => setManualTitle(e.target.value)} placeholder="Job title" />
-              <input className="jsa-input" value={manualCompany} onChange={e => setManualCompany(e.target.value)} placeholder="Company" />
+              <input className="jsa-input" value={manualTitle} onChange={e => setManualTitle(e.target.value)} placeholder="Job title *" />
+              <input className="jsa-input" value={manualCompany} onChange={e => setManualCompany(e.target.value)} placeholder="Company *" />
               <input className="jsa-input" value={manualLocation} onChange={e => setManualLocation(e.target.value)} placeholder="Location" />
             </div>
             <div style={{ marginBottom: 12 }}>
-              <textarea className="jsa-textarea" style={{ height: 220 }} value={manualJd} onChange={e => { setManualJd(e.target.value); setEvalResult(null); setManualSaved(false); setEvalError(""); }} placeholder="Paste the full job description here…" />
+              <textarea className="jsa-textarea" style={{ height: 220 }} value={manualJd} onChange={e => { setManualJd(e.target.value); setEvalResult(null); setManualSaved(false); setEvalError(""); }} placeholder="Paste job description or recruiter brief — required for Analyze Fit, optional for Save to Pipeline" />
             </div>
-            <Btn primary onClick={doManualEvaluate} disabled={evalLoading} style={{ width: "100%" }}>{evalLoading ? "Analyzing…" : "Analyze Fit"}</Btn>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn primary onClick={doManualEvaluate} disabled={evalLoading || saving} style={{ flex: 1 }}>{evalLoading ? "Analyzing…" : "Analyze Fit"}</Btn>
+              {!evalResult && !manualSaved && (
+                <Btn onClick={doSaveWithoutEval} disabled={saving || (!manualTitle.trim() && !manualCompany.trim())} style={{ flex: "0 0 auto" }}>
+                  {saving ? "Saving…" : "Save to Pipeline"}
+                </Btn>
+              )}
+            </div>
           </Card>
           <EvalPanel
             title={manualTitle || undefined}
