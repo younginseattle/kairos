@@ -1544,7 +1544,12 @@ async function doQuickScore(job) {
 
   function getAppliedJobs() {
     return [...supabaseJobs]
-      .filter(j => ["applied", "interviewing", "offer"].includes(j.status))
+      .filter(j => {
+        if (["applied", "interviewing", "offer"].includes(j.status)) return true;
+        // Include rejected/closed only when the job was actually applied to
+        if (["rejected", "closed"].includes(j.status) && j.applied_at) return true;
+        return false;
+      })
       .sort((a, b) => new Date(a.applied_at || a.created_at) - new Date(b.applied_at || b.created_at));
   }
 
@@ -1574,12 +1579,14 @@ async function doQuickScore(job) {
   function doCopyReportText() {
     const jobs = getAppliedJobs();
     const generated = `Generated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`;
-    const header = `JOB SEARCH LOG — WA Unemployment\n${generated}\n\n${"DATE".padEnd(14)}${"COMPANY".padEnd(28)}POSITION`;
-    const divider = "─".repeat(78);
+    const header = `JOB SEARCH LOG — WA Unemployment\n${generated}\n\n${"DATE".padEnd(14)}${"COMPANY".padEnd(28)}${"POSITION".padEnd(44)}STATUS`;
+    const divider = "─".repeat(96);
     const lines = jobs.map(j => {
       const date = fmtAppliedDate(j.applied_at || j.created_at).padEnd(14);
       const company = (j.company || "").slice(0, 27).padEnd(28);
-      return `${date}${company}${j.title || ""}`;
+      const title = (j.title || "").slice(0, 43).padEnd(44);
+      const status = (j.status || "").charAt(0).toUpperCase() + (j.status || "").slice(1);
+      return `${date}${company}${title}${status}`;
     });
     navigator.clipboard.writeText([header, divider, ...lines].join("\n"));
     setReportCopied("text");
@@ -2236,7 +2243,7 @@ async function doQuickScore(job) {
                 </div>
                 {jobs.length === 0 ? (
                   <div style={{ fontFamily: T.fontSans, fontSize: 12, color: T.textMuted, padding: "8px 0" }}>
-                    No applications yet — mark roles as Applied, Interviewing, or Offer to see them here.
+                    No applications yet — mark roles as Applied, Interviewing, Offer, Rejected, or Closed to see them here.
                   </div>
                 ) : (
                   <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.fontMono, fontSize: 10 }}>
