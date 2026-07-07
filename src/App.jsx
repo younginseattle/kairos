@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { supabase } from './supabaseClient'
 import { runJobIngestion, SOURCES, isRelevantJob } from './ingestion.js'
 import NetworkView from './NetworkView.jsx'
