@@ -1602,8 +1602,9 @@ async function doQuickScore(job) {
     return [...supabaseJobs]
       .filter(j => {
         if (["applied", "interviewing", "offer"].includes(j.status)) return true;
-        // Include rejected/closed only when the job was actually applied to
-        if (["rejected", "closed"].includes(j.status) && j.applied_at) return true;
+        // Always include rejected; include closed only when applied_at is set
+        if (j.status === "rejected") return true;
+        if (j.status === "closed" && j.applied_at) return true;
         return false;
       })
       .sort((a, b) => new Date(a.applied_at || a.created_at) - new Date(b.applied_at || b.created_at));
@@ -2332,24 +2333,26 @@ async function doQuickScore(job) {
                       </tr>
                     </thead>
                     <tbody>
-                      {jobs.flatMap(j => [
-                        <tr key={j.id} style={{ borderBottom: (j.contacts?.length ? 0 : 1) ? `1px solid ${T.borderFaint}` : undefined }}>
-                          <td style={{ padding: "5px 8px 5px 0", color: T.textSecondary, whiteSpace: "nowrap" }}>
-                            {fmtAppliedDate(j.applied_at || j.created_at)}
-                            {!j.applied_at && <span style={{ color: T.textMuted, fontSize: 8 }}> *</span>}
-                          </td>
-                          <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary, fontWeight: 500 }}>{j.company || "—"}</td>
-                          <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary }}>{j.title || "—"}</td>
-                          <td style={{ padding: "5px 0 5px 0", color: T.textSecondary, textTransform: "capitalize" }}>{j.status}</td>
-                        </tr>,
-                        ...(Array.isArray(j.contacts) ? j.contacts : []).map((c, ci, arr) => (
-                          <tr key={`${j.id}-c${ci}`} style={{ borderBottom: ci === arr.length - 1 ? `1px solid ${T.borderFaint}` : undefined }}>
-                            <td style={{ padding: "2px 8px 3px 10px", color: T.textMuted, fontSize: 9, whiteSpace: "nowrap" }}>↳ {c.date}</td>
-                            <td colSpan={2} style={{ padding: "2px 8px 3px 0", color: T.textMuted, fontSize: 9 }}>{c.name}{c.notes ? <span style={{ color: T.textMuted, opacity: 0.7 }}> — {c.notes}</span> : null}</td>
-                            <td />
+                      {jobs.map(j => (
+                        <React.Fragment key={j.id}>
+                          <tr style={{ borderBottom: !(j.contacts?.length) ? `1px solid ${T.borderFaint}` : undefined }}>
+                            <td style={{ padding: "5px 8px 5px 0", color: T.textSecondary, whiteSpace: "nowrap" }}>
+                              {fmtAppliedDate(j.applied_at || j.created_at)}
+                              {!j.applied_at && <span style={{ color: T.textMuted, fontSize: 8 }}> *</span>}
+                            </td>
+                            <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary, fontWeight: 500 }}>{j.company || "—"}</td>
+                            <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary }}>{j.title || "—"}</td>
+                            <td style={{ padding: "5px 0 5px 0", color: T.textSecondary, textTransform: "capitalize" }}>{j.status}</td>
                           </tr>
-                        )),
-                      ])}
+                          {(Array.isArray(j.contacts) ? j.contacts : []).map((c, ci, arr) => (
+                            <tr key={`${j.id}-c${ci}`} style={{ borderBottom: ci === arr.length - 1 ? `1px solid ${T.borderFaint}` : undefined }}>
+                              <td style={{ padding: "2px 8px 3px 10px", color: T.textMuted, fontSize: 9, whiteSpace: "nowrap" }}>↳ {c.date}</td>
+                              <td colSpan={2} style={{ padding: "2px 8px 3px 0", color: T.textMuted, fontSize: 9 }}>{c.name}{c.notes ? <span style={{ color: T.textMuted, opacity: 0.7 }}> — {c.notes}</span> : null}</td>
+                              <td />
+                            </tr>
+                          ))}
+                        </React.Fragment>
+                      ))}
                     </tbody>
                   </table>
                 )}
