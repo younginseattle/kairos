@@ -1133,6 +1133,8 @@ export default function JobSearchAgent() {
   const [manualLocation, setManualLocation] = useState("");
   const [manualSaved,    setManualSaved]    = useState(false);
   const [manualJobId,    setManualJobId]    = useState(null); // set when re-evaluating existing job
+  const [contactFormOpen, setContactFormOpen] = useState(new Set());
+  const [contactDraft,    setContactDraft]    = useState({}); // jobId → { date, name, notes }
 
   // Saved
   const [supabaseJobs,    setSupabaseJobs]    = useState([]);
@@ -1502,6 +1504,32 @@ async function doQuickScore(job) {
     setSaving(false);
   }
 
+  function todayStr() { return new Date().toISOString().split("T")[0]; }
+
+  async function doAddContact(job) {
+    const draft = contactDraft[job.id];
+    if (!draft?.name?.trim()) return;
+    const contact = { date: draft.date || todayStr(), name: draft.name.trim(), notes: (draft.notes || "").trim() };
+    const updated = [...(Array.isArray(job.contacts) ? job.contacts : []), contact];
+    const { error } = await supabase.from("jobs").update({ contacts: updated }).eq("id", job.id);
+    if (error) {
+      if (error.message.toLowerCase().includes("contacts")) {
+        alert("Run this in Supabase SQL Editor first:\n\nALTER TABLE jobs ADD COLUMN IF NOT EXISTS contacts jsonb DEFAULT '[]'::jsonb;");
+      }
+      return;
+    }
+    setSupabaseJobs(prev => prev.map(j => j.id === job.id ? { ...j, contacts: updated } : j));
+    setContactDraft(prev => ({ ...prev, [job.id]: { date: todayStr(), name: "", notes: "" } }));
+    setContactFormOpen(prev => { const next = new Set(prev); next.delete(job.id); return next; });
+  }
+
+  async function doDeleteContact(job, idx) {
+    const updated = (Array.isArray(job.contacts) ? job.contacts : []).filter((_, i) => i !== idx);
+    const { error } = await supabase.from("jobs").update({ contacts: updated }).eq("id", job.id);
+    if (error) return;
+    setSupabaseJobs(prev => prev.map(j => j.id === job.id ? { ...j, contacts: updated } : j));
+  }
+
   async function doSave() {
     setSaving(true); setEvalError("");
     try {
@@ -1590,12 +1618,22 @@ async function doQuickScore(job) {
   function doCopyReportCsv() {
     const jobs = getAppliedJobs();
     const rows = [
-      ["Date Applied", "Company", "Position", "Status"],
-      ...jobs.map(j => [
-        fmtAppliedDate(j.applied_at || j.created_at),
-        j.company || "",
-        j.title || "",
-        (j.status || "").charAt(0).toUpperCase() + (j.status || "").slice(1),
+      ["Date Applied", "Company", "Position", "Status", "Contact / Notes"],
+      ...jobs.flatMap(j => [
+        [
+          fmtAppliedDate(j.applied_at || j.created_at),
+          j.company || "",
+          j.title || "",
+          (j.status || "").charAt(0).toUpperCase() + (j.status || "").slice(1),
+          "",
+        ],
+        ...(Array.isArray(j.contacts) ? j.contacts : []).map(c => [
+          `  ↳ ${c.date}`,
+          "",
+          c.name || "",
+          "",
+          c.notes || "",
+        ]),
       ]),
     ];
     const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -1609,12 +1647,16 @@ async function doQuickScore(job) {
     const generated = `Generated: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`;
     const header = `JOB SEARCH LOG — WA Unemployment\n${generated}\n\n${"DATE".padEnd(14)}${"COMPANY".padEnd(28)}${"POSITION".padEnd(44)}STATUS`;
     const divider = "─".repeat(96);
-    const lines = jobs.map(j => {
+    const lines = jobs.flatMap(j => {
       const date = fmtAppliedDate(j.applied_at || j.created_at).padEnd(14);
       const company = (j.company || "").slice(0, 27).padEnd(28);
       const title = (j.title || "").slice(0, 43).padEnd(44);
       const status = (j.status || "").charAt(0).toUpperCase() + (j.status || "").slice(1);
-      return `${date}${company}${title}${status}`;
+      const jobLine = `${date}${company}${title}${status}`;
+      const contactLines = (Array.isArray(j.contacts) ? j.contacts : []).map(c =>
+        `  ↳ ${c.date.padEnd(12)}${(c.name || "").slice(0, 59).padEnd(60)}${c.notes || ""}`
+      );
+      return [jobLine, ...contactLines];
     });
     navigator.clipboard.writeText([header, divider, ...lines].join("\n"));
     setReportCopied("text");
@@ -2290,17 +2332,24 @@ async function doQuickScore(job) {
                       </tr>
                     </thead>
                     <tbody>
-                      {jobs.map(j => (
-                        <tr key={j.id} style={{ borderBottom: `1px solid ${T.borderFaint}` }}>
+                      {jobs.flatMap(j => [
+                        <tr key={j.id} style={{ borderBottom: (j.contacts?.length ? 0 : 1) ? `1px solid ${T.borderFaint}` : undefined }}>
                           <td style={{ padding: "5px 8px 5px 0", color: T.textSecondary, whiteSpace: "nowrap" }}>
                             {fmtAppliedDate(j.applied_at || j.created_at)}
                             {!j.applied_at && <span style={{ color: T.textMuted, fontSize: 8 }}> *</span>}
                           </td>
-                          <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary }}>{j.company || "—"}</td>
+                          <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary, fontWeight: 500 }}>{j.company || "—"}</td>
                           <td style={{ padding: "5px 8px 5px 0", color: T.textPrimary }}>{j.title || "—"}</td>
                           <td style={{ padding: "5px 0 5px 0", color: T.textSecondary, textTransform: "capitalize" }}>{j.status}</td>
-                        </tr>
-                      ))}
+                        </tr>,
+                        ...(Array.isArray(j.contacts) ? j.contacts : []).map((c, ci, arr) => (
+                          <tr key={`${j.id}-c${ci}`} style={{ borderBottom: ci === arr.length - 1 ? `1px solid ${T.borderFaint}` : undefined }}>
+                            <td style={{ padding: "2px 8px 3px 10px", color: T.textMuted, fontSize: 9, whiteSpace: "nowrap" }}>↳ {c.date}</td>
+                            <td colSpan={2} style={{ padding: "2px 8px 3px 0", color: T.textMuted, fontSize: 9 }}>{c.name}{c.notes ? <span style={{ color: T.textMuted, opacity: 0.7 }}> — {c.notes}</span> : null}</td>
+                            <td />
+                          </tr>
+                        )),
+                      ])}
                     </tbody>
                   </table>
                 )}
@@ -2480,6 +2529,61 @@ async function doQuickScore(job) {
                           setTimeout(() => doDismissSavedJob(id), 600);
                         }
                       }} />
+                      {/* Contact log */}
+                      {(() => {
+                        const contacts = Array.isArray(job.contacts) ? job.contacts : [];
+                        const isOpen = contactFormOpen.has(job.id);
+                        const draft = contactDraft[job.id] || { date: todayStr(), name: "", notes: "" };
+                        return (
+                          <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.borderFaint}` }}>
+                            {contacts.length > 0 && (
+                              <div style={{ marginBottom: 6 }}>
+                                {contacts.map((c, ci) => (
+                                  <div key={ci} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 4, padding: "4px 8px", background: T.surface, borderRadius: 4 }}>
+                                    <span style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, whiteSpace: "nowrap", marginTop: 1 }}>{c.date}</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontFamily: T.fontSans, fontSize: 11, color: T.textPrimary }}>{c.name}</div>
+                                      {c.notes && <div style={{ fontFamily: T.fontSans, fontSize: 10, color: T.textMuted, marginTop: 2 }}>{c.notes}</div>}
+                                    </div>
+                                    <button onClick={() => doDeleteContact(job, ci)} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {isOpen ? (
+                              <div style={{ background: T.surface, borderRadius: 5, padding: "8px 10px" }}>
+                                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                                  <input type="date" value={draft.date} onChange={e => setContactDraft(prev => ({ ...prev, [job.id]: { ...draft, date: e.target.value } }))}
+                                    style={{ fontFamily: T.fontMono, fontSize: 10, padding: "3px 6px", borderRadius: 3, border: `1px solid ${T.border}`, background: T.panel, color: T.textPrimary, width: 130, flexShrink: 0 }} />
+                                  <input value={draft.name} onChange={e => setContactDraft(prev => ({ ...prev, [job.id]: { ...draft, name: e.target.value } }))}
+                                    placeholder="Name · Role (e.g. Jane Smith, Hiring Manager)"
+                                    style={{ fontFamily: T.fontSans, fontSize: 11, padding: "3px 8px", borderRadius: 3, border: `1px solid ${T.border}`, background: T.panel, color: T.textPrimary, flex: 1, minWidth: 0 }} />
+                                </div>
+                                <textarea value={draft.notes || ""} onChange={e => setContactDraft(prev => ({ ...prev, [job.id]: { ...draft, notes: e.target.value } }))}
+                                  placeholder="Notes (optional) — topics discussed, next steps, impressions"
+                                  style={{ fontFamily: T.fontSans, fontSize: 10, padding: "4px 8px", borderRadius: 3, border: `1px solid ${T.border}`, background: T.panel, color: T.textPrimary, width: "100%", height: 52, resize: "vertical", marginBottom: 6, boxSizing: "border-box" }} />
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <button onClick={() => doAddContact(job)} disabled={!draft.name?.trim()}
+                                    style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.07em", padding: "3px 12px", borderRadius: 3, border: `1px solid ${T.accentDim}`, background: T.greenBg, color: T.green, cursor: draft.name?.trim() ? "pointer" : "default", opacity: draft.name?.trim() ? 1 : 0.5 }}>
+                                    Save Contact
+                                  </button>
+                                  <button onClick={() => setContactFormOpen(prev => { const next = new Set(prev); next.delete(job.id); return next; })}
+                                    style={{ fontFamily: T.fontMono, fontSize: 9, padding: "3px 8px", borderRadius: 3, border: `1px solid ${T.border}`, background: "transparent", color: T.textMuted, cursor: "pointer" }}>
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button onClick={() => {
+                                if (!contactDraft[job.id]) setContactDraft(prev => ({ ...prev, [job.id]: { date: todayStr(), name: "", notes: "" } }));
+                                setContactFormOpen(prev => new Set([...prev, job.id]));
+                              }} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                                + Log Contact
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
                         <button onClick={() => { setTab("tailor"); setTailorMode("saved"); setSelectedSavedJob(job); setTailorResult(null); setTailorError(""); }}
                           style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", padding: "4px 10px", borderRadius: 3, border: `1px solid ${T.blueBorder}`, background: T.blueBg, color: T.blue, cursor: "pointer" }}>
