@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { supabase } from './supabaseClient'
 import { runJobIngestion, SOURCES, isRelevantJob } from './ingestion.js'
 import NetworkView from './NetworkView.jsx'
@@ -2334,7 +2334,7 @@ async function doQuickScore(job) {
                     </thead>
                     <tbody>
                       {jobs.map(j => (
-                        <React.Fragment key={j.id}>
+                        <Fragment key={j.id}>
                           <tr style={{ borderBottom: !(j.contacts?.length) ? `1px solid ${T.borderFaint}` : undefined }}>
                             <td style={{ padding: "5px 8px 5px 0", color: T.textSecondary, whiteSpace: "nowrap" }}>
                               {fmtAppliedDate(j.applied_at || j.created_at)}
@@ -2351,7 +2351,7 @@ async function doQuickScore(job) {
                               <td />
                             </tr>
                           ))}
-                        </React.Fragment>
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
