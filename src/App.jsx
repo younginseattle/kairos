@@ -81,6 +81,59 @@ function buildGlobalStyles(tokens) {
     .fade-up { animation: fadeUp 0.25s ease forwards; }
     @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
     .pulse { animation: pulse 1.4s ease-in-out infinite; }
+
+    /* ── Mobile responsive ────────────────────────────── */
+    @media (max-width: 640px) {
+      /* Main container: tighter padding */
+      .jsa-main { padding: 14px 12px !important; }
+
+      /* Tab bar: horizontal scroll so all 5 tabs always fit */
+      .jsa-tab-bar {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .jsa-tab-bar::-webkit-scrollbar { display: none; }
+      .jsa-tab-bar .jsa-tab {
+        flex: 0 0 auto !important;
+        min-width: 72px;
+        white-space: nowrap;
+        font-size: 12px !important;
+        padding: 8px 6px !important;
+        min-height: 40px;
+      }
+
+      /* Touch targets: every button gets at least 36px height */
+      button { min-height: 36px; }
+      .jsa-btn, .jsa-btn-ghost { padding: 8px 14px !important; min-height: 38px; }
+
+      /* Filter bar action group: wraps to its own row on narrow screens */
+      .jsa-filter-actions {
+        width: 100% !important;
+        margin-left: 0 !important;
+        flex-wrap: wrap !important;
+        justify-content: flex-end;
+        border-top: 1px solid ${tokens.borderFaint};
+        padding-top: 8px;
+        margin-top: 4px;
+      }
+
+      /* Report table: horizontal scroll */
+      .jsa-report-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .jsa-report-table-wrap table { min-width: 380px; }
+
+      /* Hero score: slightly smaller on phones */
+      .jsa-score-hero { font-size: 36px !important; }
+
+      /* Settings inputs: no need for huge text areas on mobile */
+      .jsa-settings .jsa-textarea { min-height: 60px !important; }
+
+      /* Source list items: wrap pills onto next line */
+      .jsa-source-row { flex-wrap: wrap !important; }
+
+      /* Discover section toggle: full width buttons */
+      .jsa-section-toggle { flex: 1 !important; text-align: center; }
+    }
   `;
 }
 
@@ -637,7 +690,7 @@ function ScoreNum({ score, hero = false }) {
   const pct = Math.max(0, Math.min(100, score || 0));
   const color = scoreColor(pct);
   return (
-    <span style={{ fontFamily: T.fontMono, fontSize: hero ? 48 : 24, fontWeight: 700, color, lineHeight: 1, flexShrink: 0 }}>{pct}</span>
+    <span className={hero ? "jsa-score-hero" : undefined} style={{ fontFamily: T.fontMono, fontSize: hero ? 48 : 24, fontWeight: 700, color, lineHeight: 1, flexShrink: 0 }}>{pct}</span>
   );
 }
 
@@ -1846,7 +1899,7 @@ async function doQuickScore(job) {
   const DOMAIN_COLORS = { observability: { color: T.green, bg: T.greenBg, border: T.greenBorder }, infrastructure: { color: T.blue, bg: T.blueBg, border: T.blueBorder }, platform: { color: T.amber, bg: T.amberBg, border: T.amberBorder }, defense: { color: "#f97316", bg: "rgba(249,115,22,0.12)", border: "rgba(249,115,22,0.4)" }, space: { color: "#818cf8", bg: "rgba(129,140,248,0.12)", border: "rgba(129,140,248,0.4)" } };
 
   return (
-    <div style={{ fontFamily: T.fontSans, maxWidth: 820, margin: "0 auto", padding: "28px 18px", background: T.bg, minHeight: "100vh" }}>
+    <div className="jsa-main" style={{ fontFamily: T.fontSans, maxWidth: 820, margin: "0 auto", padding: "28px 18px", background: T.bg, minHeight: "100vh" }}>
 
       {/* HEADER */}
       <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${T.borderFaint}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -1867,7 +1920,7 @@ async function doQuickScore(job) {
 
       {/* SETTINGS DRAWER */}
       {settingsOpen && (
-        <div style={{ marginBottom: 16, background: T.panel, border: `1px solid ${T.borderFaint}`, borderRadius: 8, padding: 12 }}>
+        <div className="jsa-settings" style={{ marginBottom: 16, background: T.panel, border: `1px solid ${T.borderFaint}`, borderRadius: 8, padding: 12 }}>
           <div style={{ marginBottom: 10 }}><input type="password" className="jsa-input" value={anthropicKey} onChange={e => { setAnthropicKey(e.target.value); localStorage.setItem("jsa_anthropic_key", e.target.value); }} placeholder="Anthropic API key (sk-ant-…)" /></div>
           <div style={{ marginBottom: 10 }}><textarea className="jsa-textarea" style={{ height: 80 }} value={profile} onChange={e => setProfile(e.target.value)} placeholder="Candidate profile…" /></div>
           <div><textarea className="jsa-textarea" style={{ height: 100 }} value={masterResume} onChange={e => { setMasterResume(e.target.value); localStorage.setItem("jsa_master_resume", e.target.value); }} placeholder="Master resume — paste from PDF…" /></div>
@@ -1875,7 +1928,7 @@ async function doQuickScore(job) {
       )}
 
       {/* TABS */}
-      <div style={{ display: "flex", gap: 2, marginBottom: 20, background: T.surface, borderRadius: 7, padding: 3, border: `1px solid ${T.borderFaint}` }}>
+      <div className="jsa-tab-bar" style={{ display: "flex", gap: 2, marginBottom: 20, background: T.surface, borderRadius: 7, padding: 3, border: `1px solid ${T.borderFaint}` }}>
         {TABS.map(t => (
           <button key={t.key} className="jsa-tab"
             onClick={() => { if (t.key === tab) return; setTab(t.key); if (t.key === "manual") { setEvalResult(null); setEvalError(""); setManualJobId(null); } }}
@@ -1891,7 +1944,7 @@ async function doQuickScore(job) {
           <TopJobsToday jobs={supabaseJobs} onStatusChange={handleStatusChange} />
           <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
             {[{ key: "auto", label: "⚡ Auto-Discover" }, { key: "email", label: "📧 Email Alerts" }].map(s => (
-              <button key={s.key} className="jsa-toggle" onClick={() => setDiscoverSection(s.key)}
+              <button key={s.key} className="jsa-toggle jsa-section-toggle" onClick={() => setDiscoverSection(s.key)}
                 style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", padding: "6px 14px", borderRadius: 5, border: `1px solid ${discoverSection === s.key ? T.accentDim : T.border}`, background: discoverSection === s.key ? T.greenBg : "transparent", color: discoverSection === s.key ? T.green : T.textMuted, cursor: "pointer", transition: "all 0.15s" }}>
                 {s.label}
               </button>
@@ -1908,7 +1961,7 @@ async function doQuickScore(job) {
                   {SOURCES.map(({ id, ats, tier, domain }) => {
                     const dc = DOMAIN_COLORS[domain] || DOMAIN_COLORS.platform;
                     return (
-                      <div key={id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 5 }}>
+                      <div key={id} className="jsa-source-row" style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 5 }}>
                         <span style={{ fontFamily: T.fontSans, fontSize: 12, color: T.textSecondary, flex: 1, textTransform: "capitalize" }}>{id}</span>
                         <Pill color={dc.color} bg={dc.bg} border={dc.border}>{domain}</Pill>
                         <Pill color={ats === "greenhouse" ? T.green : T.blue} bg={ats === "greenhouse" ? T.greenBg : T.blueBg} border={ats === "greenhouse" ? T.greenBorder : T.blueBorder}>{ats}</Pill>
@@ -2280,7 +2333,7 @@ async function doQuickScore(job) {
               const active = savedSort === value;
               return <button key={value} onClick={() => setSavedSort(value)} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.accentDim : T.border}`, background: active ? T.blueBg : "transparent", color: active ? T.blue : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
             })}
-            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            <div className="jsa-filter-actions" style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <Btn small onClick={doRefreshSupabase} disabled={reEvalRunning}>↻</Btn>
               <Btn small onClick={doCheckOpenJobs} disabled={checkRunning} title="Check Greenhouse + Lever jobs for closed listings. LinkedIn requires manual check.">{checkRunning ? "Checking…" : "🔍 Check Closed"}</Btn>
               <Btn small onClick={() => setShowReport(s => !s)} style={showReport ? { borderColor: T.accentDim, background: T.greenBg, color: T.green } : {}}>📋 Report</Btn>
@@ -2324,7 +2377,7 @@ async function doQuickScore(job) {
                     No applications yet — mark roles as Applied, Interviewing, Offer, Rejected, or Closed to see them here.
                   </div>
                 ) : (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.fontMono, fontSize: 10 }}>
+                  <div className="jsa-report-table-wrap"><table style={{ width: "100%", borderCollapse: "collapse", fontFamily: T.fontMono, fontSize: 10 }}>
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${T.border}` }}>
                         {["Date Applied", "Company", "Position", "Status"].map(h => (
@@ -2354,7 +2407,7 @@ async function doQuickScore(job) {
                         </Fragment>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 )}
                 {jobs.some(j => !j.applied_at) && (
                   <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 8 }}>
