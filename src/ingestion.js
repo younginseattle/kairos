@@ -167,11 +167,15 @@ STRICT RULES:
 - Outside observability/platform/infrastructure/data/AI → subtract 15+
 - Experience mismatch → cap at 65
 - Vague/minimal JD → confidence below 50, score below 60
+- PRODUCT ROLE PROTECTION: If job title contains VP, Director, Head of, Group PM, Staff PM, or Principal PM — this is a Product Management leadership role. Evaluate experience_match against PM leadership experience, NOT engineering background. "Engineering leadership" or deep technical requirements in a Product title role = the ability to work with, influence, and deeply understand engineering — not a requirement to have been an engineer. Never give near-zero experience_match scores on a Product title role solely because the JD mentions engineering depth.
+- SCORE FLOOR: For any VP/Director/Staff/Group PM/Head of Product title in the candidate's target domains, the minimum overall_score is 45. A score below 40 is almost never appropriate — use "stretch" + score 45-60 for roles with real but bridgeable gaps, not a near-zero score.
+- TARGET COMPANIES (company_score 80-95): CoreWeave, Anthropic, Databricks, Grafana Labs, Datadog, Elastic, New Relic, Cloudflare, Temporal, LaunchDarkly, PagerDuty, Honeycomb, Sumo Logic, Cribl, Scale AI, Glean
 - LOCATION (candidate is Seattle-based, no relocation): Always scan the FULL job description for remote signals ("or remote", "or remotely", "remotely in", "remote option", "remote eligible", "work remotely") — if any are present, treat as remote regardless of what the location field says. Remote=95-100, Seattle/WA area=90-95, Hybrid Seattle=80-85, Hybrid elsewhere=60-75, In-office non-Seattle=40-60, Requires relocation=10-30
 - work_life_balance_score: 85-100=remote-first or async culture, explicit flexibility signals, generous PTO, established company with balance-positive signals; 70-84=hybrid with flexibility, public/established company, no on-call signals, standard benefits; 50-69=high-growth startup, "fast-paced"/"high-velocity"/"wear many hats" language, implicit intensity, Series A/B; 30-49=on-call required, "always-on" culture, early-stage startup, 24/7 availability signals, explicit high-intensity language
 
 SCORING: weight experience_match 40%, skills_match 30%, role level gate.
 Most jobs 50-75. Only 80+ for clearly strong senior SaaS/platform fits.
+Scores below 40 require explicit justification that the role title itself is not a PM role.
 
 Breakdown:
 - compensation_score: seniority + company size signals
