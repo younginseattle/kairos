@@ -211,6 +211,7 @@ const SKIP_PATTERNS = [
   /^be an early applicant/i,
   /^over \d[\d,]* applicants?/i,
   /^\d[\d,]*\+?\s+applicants?/i,
+  /^\d+\s+school\s+alum/i, // standalone "N school alum" line
   /^\$[\d,]+/,              // salary like "$180,000" or "$180K"
   /^[\d,.]+[kK]\/yr/i,     // salary like "180K/yr"
   /^\d[\d,.]*[kK]?\s*[-–]\s*\d/,  // salary range like "180K–230K"
@@ -242,7 +243,7 @@ function parseJobsFromBody(body) {
     // inline in location strings, e.g. "United States · 1 school alum".
     const lines = before
       .split(/\r?\n/)
-      .map(l => l.trim().replace(/\s*[·•‧․·•|]\s*\d+\s+school\s+alum\w*/gi, '').trim())
+      .map(l => l.trim().replace(/[^\w\s]\s*\d+\s+school\s+alum\w*/gi, '').replace(/\s{2,}/g, ' ').trim())
       .filter(l => l.length > 2 && l.length < 150 && !shouldSkipLine(l)
                    && !/^https?:\/\//i.test(l));   // skip any URL lines
 
@@ -255,7 +256,7 @@ function parseJobsFromBody(body) {
     // description (long, contains conjunctions) rather than a company name,
     // use the line above it as the company instead.
     let location = (lines[lines.length - 1] || 'United States')
-      .replace(/\s*[·•‧․·•|]\s*\d+\s+school\s+alum\w*/gi, '').trim();
+      .replace(/[^\w\s]\s*\d+\s+school\s+alum\w*/gi, '').replace(/\s{2,}/g, ' ').trim();
     let company  = lines[lines.length - 2] || '';
     let companyOffset = 2;
     if (company.length > 40 && /\b(and|&)\b/i.test(company)) {
