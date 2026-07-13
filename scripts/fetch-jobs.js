@@ -237,24 +237,36 @@ function parseJobsFromBody(body) {
     // Grab the text block before this URL (up to 600 chars back)
     const before = body.slice(Math.max(0, m.index - 600), m.index);
 
-    // Split into non-empty, non-noise lines — take the last few
+    // Split into non-empty, non-noise lines — take the last few.
+    // Also strip LinkedIn's "· N school alum(s)" annotation that appears
+    // inline in location strings, e.g. "United States · 1 school alum".
     const lines = before
       .split(/\r?\n/)
-      .map(l => l.trim())
+      .map(l => l.trim().replace(/\s*[·•]\s*\d+\s+school\s+alum\w*/gi, '').trim())
       .filter(l => l.length > 2 && l.length < 150 && !shouldSkipLine(l)
                    && !/^https?:\/\//i.test(l));   // skip any URL lines
 
     if (lines.length < 2) continue;
 
-    // The last 3 meaningful lines before the URL are: title, company, location.
-    // Scan backwards to find the title line — it should contain a product/
-    // seniority keyword. This handles extra LinkedIn noise lines (salary,
-    // applicant count, "Promoted", etc.) that slip through SKIP_PATTERNS.
-    const location = lines[lines.length - 1] || 'United States';
-    const company  = lines[lines.length - 2] || '';
+    // The last meaningful lines before the URL are: title, company, location.
+    // LinkedIn now sometimes injects a business-unit/vertical line between
+    // company and location (e.g. "M&A, Strategy and Technology Partnerships").
+    // Detect that pattern: if the second-to-last line looks like a department
+    // description (long, contains conjunctions) rather than a company name,
+    // use the line above it as the company instead.
+    let location = lines[lines.length - 1] || 'United States';
+    let company  = lines[lines.length - 2] || '';
+    let companyOffset = 2;
+    if (company.length > 40 && /\b(and|&)\b/i.test(company)) {
+      // Looks like a department/vertical — skip it
+      companyOffset = 3;
+      company = lines[lines.length - 3] || lines[lines.length - 2];
+    }
 
-    let title = lines[lines.length - 3] || lines[lines.length - 2];
-    for (let i = lines.length - 3; i >= 0; i--) {
+    // Scan backwards to find the title line — it must contain a seniority
+    // keyword. This is robust against any remaining noise lines.
+    let title = lines[lines.length - (companyOffset + 1)] || company;
+    for (let i = lines.length - (companyOffset + 1); i >= 0; i--) {
       const candidate = lines[i].toLowerCase();
       if (SENIORITY_KEYWORDS.some(kw => candidate.includes(kw))) {
         title = lines[i];
