@@ -382,7 +382,7 @@ CALIBRATION EXAMPLES — use these as anchors:
 
 TARGET COMPANIES (company_score 80-95): CoreWeave, Anthropic, Databricks, Grafana Labs, Datadog, Elastic, New Relic, Cloudflare, Temporal, LaunchDarkly, PagerDuty, Honeycomb, Sumo Logic, Cribl, Scale AI, Glean, Stripe, GitLab, MongoDB
 
-LOCATION (candidate: Seattle, no relocation). Scan full JD for remote signals ("remote", "remotely", "remote option", "remote eligible", "work remotely"). Remote=95-100, Seattle/WA=90-95, Hybrid Seattle=80-85, Hybrid other city=60-75, In-office non-Seattle=40-60, Requires relocation=10-30.
+LOCATION (candidate: Seattle, no relocation). The LOCATION field in the message is authoritative — if it says "Remote", "remote", or any remote variant, use location_score 95-100 without further analysis. If LOCATION is blank or "Not specified", scan the full JD body for remote signals ("remote", "remotely", "remote option", "remote eligible", "work remotely") — if found, treat as remote. Score: Remote=95-100, Seattle/WA=90-95, Hybrid Seattle=80-85, Hybrid other city=60-75, In-office non-Seattle=40-60, Requires relocation=10-30.
 
 work_life_balance_score: 85-100=remote-first, explicit flexibility, generous PTO, established company; 70-84=hybrid with flexibility, no on-call signals, public/stable company; 50-69=high-growth startup, "fast-paced"/"high-velocity" language, implicit intensity; 30-49=on-call, "always-on", early-stage, 24/7 signals.
 
