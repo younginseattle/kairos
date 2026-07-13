@@ -221,27 +221,30 @@ function deriveConfidence({ confidence_score, parsed = true, jd_text = "", skill
   return Math.max(15, Math.min(95, b)) / 100;
 }
 
-function calculateFinalScore({ skills_match, experience_match, culture_match, confidence_score, parsed = true, jd_text = "", missing_keywords = [], strategic_gaps = [], location_penalty = 0, recommendation = null, top_candidate_signal = null }) {
-  const mk = missing_keywords || [], sg = strategic_gaps || [];
-  const base = (
+function calculateFinalScore({ overall_score, skills_match, experience_match, culture_match, confidence_score, parsed = true, jd_text = "", missing_keywords = [], strategic_gaps = [], location_penalty = 0, top_candidate_signal = null }) {
+  // Use Claude's overall_score directly — it already accounts for gaps, domain fit, and level.
+  // Fall back to dimension-weighted computation only when overall_score is absent.
+  const computedBase = (
     (experience_match ?? 0) * 0.40 +
     (skills_match     ?? 0) * 0.35 +
     (culture_match    ?? 0) * 0.25
   );
+  const base = overall_score ?? computedBase;
+
+  // Penalise only for missing dimension scores (Claude can't account for null fields)
   let rp = 0;
-  if (skills_match == null) rp += 15; if (experience_match == null) rp += 10; if (culture_match == null) rp += 5;
-  const penalty = Math.min(rp, 20), adjusted = Math.max(0, base - penalty);
+  if (skills_match == null) rp += 15;
+  if (experience_match == null) rp += 10;
+  if (culture_match == null) rp += 5;
+  const nullPenalty = Math.min(rp, 20);
+
   const cf = deriveConfidence({ confidence_score, parsed, jd_text, skills_match, experience_match, culture_match });
-  const weighted = adjusted * (0.6 + cf * 0.4);
-  const sp = Math.min(10, (mk.length + sg.length * 1.5) * 1.5);
-  const boosted = Math.min(Math.max(0, weighted - sp) + ((base >= 70 && cf >= 0.7 && parsed !== false) ? 8 : 0), 100);
-  const scaled = Math.round(100 * Math.pow(boosted / 100, 0.85));
-  // Apply location, recommendation, and signal adjustments AFTER scaling
   const locPenalty = Math.abs(location_penalty);
-  const recAdj = recommendation === "skip" ? -8 : recommendation === "stretch" ? -4 : 0;
-  const sigAdj = top_candidate_signal?.level === "HIGH" ? 5 : top_candidate_signal?.level === "LOW" ? -5 : 0;
-  const final_score = Math.min(Math.max(scaled - locPenalty + recAdj + sigAdj, 0), parsed === false ? 55 : 100);
-  return { final_score, _base: Math.round(base), _penalty: penalty, _confidence_pct: Math.round(cf * 100), _stretch_penalty: Math.round(sp), _location_penalty: locPenalty, _capped: parsed === false };
+  // Small signal boost/drag — Claude's overall_score doesn't see top_candidate_signal
+  const sigAdj = top_candidate_signal?.level === "HIGH" ? 3 : top_candidate_signal?.level === "LOW" ? -3 : 0;
+
+  const final_score = Math.min(Math.max(Math.round(base - nullPenalty - locPenalty + sigAdj), 0), parsed === false ? 55 : 100);
+  return { final_score, _base: Math.round(base), _penalty: nullPenalty, _confidence_pct: Math.round(cf * 100), _stretch_penalty: 0, _location_penalty: locPenalty, _capped: parsed === false };
 }
 
 function enrichJob(job) {
@@ -249,6 +252,7 @@ function enrichJob(job) {
   // Classify location — use job.location, falling back to location_score hints
   const locClassification = classifyLocation(job.location || "", jd);
   const scoring = calculateFinalScore({
+    overall_score:        job.overall_score ?? job.score ?? null,
     skills_match:         job.skills_match,
     experience_match:     job.experience_match,
     culture_match:        job.culture_match,
@@ -258,7 +262,6 @@ function enrichJob(job) {
     missing_keywords:     mk,
     strategic_gaps:       sg,
     location_penalty:     locClassification.penalty,
-    recommendation:       job.recommendation,
     top_candidate_signal: job.top_candidate_signal,
   });
   const cf = deriveConfidence({ confidence_score: job.confidence_score, parsed: job.parsed ?? true, jd_text: jd, skills_match: job.skills_match, experience_match: job.experience_match, culture_match: job.culture_match });
@@ -952,9 +955,9 @@ function TopJobsToday({ jobs, onStatusChange }) {
 // ─────────────────────────────────────────────────────────────────
 // EVAL PANEL
 // ─────────────────────────────────────────────────────────────────
-function EvalPanel({ title, subtitle, result, jd_text, loading, error, saving, saved, onSave, onTailor }) {
+function EvalPanel({ title, subtitle, result, jd_text, location, loading, error, saving, saved, onSave, onTailor }) {
   if (!loading && !result && !error) return null;
-  const enriched = result ? enrichJob({ ...result, jd_text }) : null;
+  const enriched = result ? enrichJob({ ...result, jd_text, location: location || "" }) : null;
   return (
     <div className="fade-up" style={{ background: T.panel, border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
       {(title || subtitle) && (
@@ -2270,6 +2273,7 @@ async function doQuickScore(job) {
             subtitle={manualCompany || undefined}
             result={evalResult}
             jd_text={manualJd}
+            location={manualLocation}
             loading={evalLoading}
             error={evalError}
             saving={saving}
