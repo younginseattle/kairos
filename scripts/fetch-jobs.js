@@ -50,7 +50,8 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 // ─────────────────────────────────────────────────────────────────
 
 const SENIORITY_KEYWORDS = [
-  'director', 'head of product', 'vp of product', 'vp product',
+  'director', 'head of product',
+  'vp of product', 'vp product', 'vp, product',
   'vice president of product', 'vice president, product',
   'group product manager', 'group pm',
   'staff product manager', 'staff pm',
@@ -199,6 +200,20 @@ const SKIP_PATTERNS = [
   /apply with/i,
   /match your preferences/i,
   /new jobs? for you/i,
+  // LinkedIn email noise lines that shift title/company/location parsing
+  /^promoted$/i,
+  /^easy apply$/i,
+  /^full[\s-]?time$/i,
+  /^part[\s-]?time$/i,
+  /^contract$/i,
+  /^internship$/i,
+  /^temporary$/i,
+  /^be an early applicant/i,
+  /^over \d[\d,]* applicants?/i,
+  /^\d[\d,]*\+?\s+applicants?/i,
+  /^\$[\d,]+/,              // salary like "$180,000" or "$180K"
+  /^[\d,.]+[kK]\/yr/i,     // salary like "180K/yr"
+  /^\d[\d,.]*[kK]?\s*[-–]\s*\d/,  // salary range like "180K–230K"
 ];
 
 function shouldSkipLine(line) {
@@ -212,7 +227,7 @@ function parseJobsFromBody(body) {
 
   // Find every LinkedIn job URL — handles /jobs/view/ and /comm/jobs/view/
   // with or without tracking params or trailing slash
-  const urlRe = /https?:\/\/(?:www\.)?linkedin\.com\/comm\/jobs\/view\/(\d+)[^\s]*/g;
+  const urlRe = /https?:\/\/(?:www\.)?linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)[^\s]*/g;
   let m;
 
   while ((m = urlRe.exec(body)) !== null) {
@@ -231,10 +246,21 @@ function parseJobsFromBody(body) {
 
     if (lines.length < 2) continue;
 
-    // The last meaningful lines before the URL are title / company / location
+    // The last 3 meaningful lines before the URL are: title, company, location.
+    // Scan backwards to find the title line — it should contain a product/
+    // seniority keyword. This handles extra LinkedIn noise lines (salary,
+    // applicant count, "Promoted", etc.) that slip through SKIP_PATTERNS.
     const location = lines[lines.length - 1] || 'United States';
     const company  = lines[lines.length - 2] || '';
-    const title    = lines[lines.length - 3] || lines[lines.length - 2];
+
+    let title = lines[lines.length - 3] || lines[lines.length - 2];
+    for (let i = lines.length - 3; i >= 0; i--) {
+      const candidate = lines[i].toLowerCase();
+      if (SENIORITY_KEYWORDS.some(kw => candidate.includes(kw))) {
+        title = lines[i];
+        break;
+      }
+    }
 
     if (!title || title.length > 120 || company.length > 100) continue;
     if (!isRelevantTitle(title)) continue;
