@@ -175,17 +175,18 @@ OVERALL SCORE:
   Below 45: Wrong level, wrong function, or outside all target domains
 
 CALIBRATION ANCHORS — match your output to these:
-  Ex1: "VP, Product AI/ML" CoreWeave, requires HPC/Slurm/InfiniBand, no remote stated. Candidate: 10+ yr VP-level PM, platform/infra background.
-    → experience_match:58, skills_match:55, location_score:25, company_score:90, overall:58, recommendation:stretch
+  Ex1: "VP, Product AI/ML" CoreWeave (AI cloud infra, tier-1 target). JD lists HPC/Slurm/InfiniBand depth and "engineering leadership". No explicit remote. Candidate: 10+ yr VP-level PM, strong platform/infra/distributed-systems background, no hands-on HPC.
+    → experience_match:68, skills_match:65, location_score:40, company_score:90, compensation_score:95, work_life_balance_score:58, overall:68, recommendation:apply_with_note
+    Rationale: right seniority, tier-1 target, exact domain. "Engineering leadership" in a VP Product JD = technical influence ability. Real gaps are HPC tooling and location ambiguity — bridgeable, not disqualifying.
 
   Ex2: "Director of Product Management" Datadog, observability platform, remote-friendly. Candidate: platform PM, distributed systems experience.
-    → experience_match:78, skills_match:76, location_score:97, company_score:90, overall:78, recommendation:apply
+    → experience_match:80, skills_match:78, location_score:97, company_score:90, overall:80, recommendation:apply
 
   Ex3: "Director of Product" mid-size HR SaaS. Candidate: strong PM, wrong domain.
     → experience_match:55, skills_match:58, overall:52, recommendation:apply_with_note
 
-  Ex4: "VP of Engineering" (engineering management, not product). Candidate: PM background.
-    → experience_match:25, skills_match:30, overall:28, recommendation:skip
+  Ex4: "VP of Engineering" (pure engineering management, no Product in title). Candidate: PM background.
+    → experience_match:22, skills_match:28, overall:26, recommendation:skip
 
 TARGET COMPANIES (company_score 80-95): CoreWeave, Anthropic, Databricks, Grafana Labs, Datadog, Elastic, New Relic, Cloudflare, Temporal, LaunchDarkly, PagerDuty, Honeycomb, Sumo Logic, Cribl, Scale AI, Glean, Stripe, GitLab, MongoDB
 

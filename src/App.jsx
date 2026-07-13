@@ -356,28 +356,28 @@ ROLE CLASSIFICATION — apply before scoring:
   - Vague/minimal JD (under 200 words, no real requirements) → confidence below 50, score below 60
 
 OVERALL SCORE GUIDANCE:
-  - 75-90: VP/Director PM in exact target domain (observability, AI/ML platform, infrastructure SaaS), remote-friendly, tier-1 company
-  - 65-75: VP/Director PM in adjacent domain (data platforms, devtools, cloud infra), or tier-1 company with one meaningful gap
-  - 55-65: VP/Director PM with real but bridgeable gaps (strong engineering requirements, location friction, domain stretch) → recommendation: stretch or apply_with_note
-  - 45-55: Partial fit — right level, wrong domain, or meaningful seniority gap → recommendation: apply_with_note or stretch
+  - 78-90: VP/Director PM in exact target domain, remote-friendly, tier-1 company, strong domain alignment
+  - 65-78: VP/Director PM at tier-1 target company in target domain even with bridgeable gaps (engineering depth requirements, HPC-specific tooling, location uncertainty). This is the correct band for CoreWeave/Anthropic/Datadog VP Product roles where candidate has right background but some gaps.
+  - 55-65: VP/Director PM in adjacent domain with location friction, or strong domain + meaningful seniority mismatch
+  - 45-55: Right level, wrong domain, or meaningful seniority gap
   - Below 45: Wrong level, wrong function (engineering not product), or outside all target domains
-  The overall_score must be consistent with experience_match and skills_match. A PM candidate cannot score below 50 overall at a target company on a VP/Director Product title when experience_match ≥ 50 and skills_match ≥ 45.
+  The overall_score must be consistent with experience_match and skills_match. A PM candidate cannot score below 55 at a tier-1 target company on a VP/Director Product title in the target domain.
 
 CALIBRATION EXAMPLES — use these as anchors:
-  1. "VP, Product AI/ML" at CoreWeave (requires HPC/Slurm/InfiniBand engineering depth). Candidate: 10+ yr VP-level PM, strong platform/infra background, no hands-on HPC.
-     → experience_match: 58, skills_match: 55, overall: 58, recommendation: stretch
-     Rationale: right level, tier-1 company, strong domain, real HPC depth gap but it's a Product title
+  1. "VP, Product AI/ML" at CoreWeave (AI cloud infra, tier-1 target). JD lists HPC/Slurm/InfiniBand depth and "engineering leadership" as requirements. No explicit remote signal. Candidate: 10+ yr VP-level PM, strong platform/infra/distributed-systems background, no hands-on HPC ops.
+     → experience_match: 68, skills_match: 65, location_score: 40, company_score: 90, compensation_score: 95, work_life_balance_score: 58, overall: 68, recommendation: apply_with_note
+     Rationale: right seniority, tier-1 target company, exact target domain. "Engineering leadership" in a VP Product JD = technical depth and influence ability, not hands-on ops. Real gaps are HPC tooling and location ambiguity — not disqualifying. This is a strong target role worth applying to with a tailored narrative.
 
-  2. "Director of Product Management" at Datadog (observability platform). Candidate: platform PM background, distributed systems experience.
-     → experience_match: 78, skills_match: 76, overall: 78, recommendation: apply
+  2. "Director of Product Management" at Datadog (observability platform, remote-friendly). Candidate: platform PM, distributed systems experience.
+     → experience_match: 80, skills_match: 78, location_score: 97, company_score: 90, overall: 80, recommendation: apply
 
   3. "Director of Product" at mid-size B2B SaaS (HR software, no platform angle). Candidate: strong PM, wrong domain.
      → experience_match: 55, skills_match: 58, overall: 52, recommendation: apply_with_note
 
-  4. "VP of Engineering" (engineering management role). Candidate: is a PM.
-     → experience_match: 25, skills_match: 30, overall: 28, recommendation: skip
+  4. "VP of Engineering" (pure engineering management, no Product in title). Candidate: is a PM.
+     → experience_match: 22, skills_match: 28, overall: 26, recommendation: skip
 
-  5. "Senior Product Manager" (IC role, not leadership). Candidate: is a VP/Director-level PM.
+  5. "Senior Product Manager" (IC individual contributor role, not leadership). Candidate: is a VP/Director-level PM.
      → experience_match: 65, skills_match: 70, overall: 58, recommendation: apply_with_note (overqualified)
 
 TARGET COMPANIES (company_score 80-95): CoreWeave, Anthropic, Databricks, Grafana Labs, Datadog, Elastic, New Relic, Cloudflare, Temporal, LaunchDarkly, PagerDuty, Honeycomb, Sumo Logic, Cribl, Scale AI, Glean, Stripe, GitLab, MongoDB
