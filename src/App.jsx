@@ -318,7 +318,7 @@ const REC_CONFIG = {
 // CLAUDE PROMPTS
 // ─────────────────────────────────────────────────────────────────
 
-const FIT_PROMPT = `You are a senior career coach specializing in Product Management leadership roles. Analyze the fit between a job description and a candidate profile. Return ONLY raw JSON — no markdown fences, no explanation, no extra text.
+const FIT_PROMPT = `You are a PM recruiting specialist evaluating VP/Director-level Product candidates. The candidate is a Product Manager, not an engineer. Return ONLY raw JSON — no markdown, no explanation.
 
 Schema:
 {
@@ -335,22 +335,58 @@ Schema:
   "top_candidate_signal": { "level": "HIGH | MEDIUM | LOW", "reason": "1 sentence" }
 }
 
-STRICT RULES:
-- Not clearly Manager/Director/VP/Staff/Group PM level → below 60
-- Outside observability/platform/infrastructure/data/AI/ML/developer tools → subtract 15+
-- Experience mismatch → cap at 65. Vague/minimal JD → confidence below 50, score below 60
-- PRODUCT ROLE PROTECTION — MANDATORY: If the job title contains VP, Director, Head of, Group PM, Staff PM, or Principal PM, apply ALL of the following without exception:
-  * experience_match: score against PM leadership tenure and domain relevance ONLY. Do NOT factor in engineering management history, hands-on use of specific infra tools (Slurm, InfiniBand, RDMA, Kubernetes ops, etc.), or research lab background. A VP of Product candidate with 10+ years PM experience in a relevant domain gets experience_match ≥ 55. With partial domain overlap, experience_match ≥ 45. experience_match below 40 is invalid for a VP/Director PM role.
-  * skills_match: score against product strategy, roadmapping, cross-functional leadership, and domain knowledge. Technical fluency to partner with engineering is sufficient — the candidate does not need to personally operate infrastructure tools. skills_match ≥ 45 for any VP/Director PM role in target domains.
-  * overall_score floor: 50 minimum for a VP/Director PM role at a target company (CoreWeave, Anthropic, Datadog, etc.) even when real gaps exist. Score 50-65 = stretch/apply_with_note. Score below 45 requires the role to not be a PM role at all.
-  * Use recommendation="stretch" (not "skip") when the role is clearly a PM title but requires engineering depth the candidate lacks.
-- TARGET COMPANIES (company_score 80-95): CoreWeave, Anthropic, Databricks, Grafana Labs, Datadog, Elastic, New Relic, Cloudflare, Temporal, LaunchDarkly, PagerDuty, Honeycomb, Sumo Logic, Cribl, Scale AI, Glean
-- Strong fit signals (score 75+): distributed telemetry, LLM/AI observability, ML pipeline monitoring, agentic workflows, MCP, Kubernetes-native platforms, high-cardinality data, SLO monitoring, automated remediation, API-first platforms, cloud-scale SaaS
-- Good fit signals (score 65-75): data platforms, developer tools, infrastructure automation, cloud-native products, PLG SaaS, enterprise B2B platform PM
-- Candidate has 10+ years, VP/Director-level, Seattle-based, strong technical depth in distributed systems — do not penalize for "overqualified" at Director level
-- LOCATION (candidate is Seattle-based, no relocation): Always scan the FULL job description for remote signals ("or remote", "or remotely", "remotely in", "remote option", "remote eligible", "work remotely") — if any are present, treat as remote regardless of what the location field says. Remote=95-100, Seattle/WA area=90-95, Hybrid Seattle=80-85, Hybrid elsewhere=60-75, In-office non-Seattle=40-60, Requires relocation=10-30
-- work_life_balance_score: 85-100=remote-first or async culture, explicit flexibility signals, generous PTO, established company with balance-positive signals; 70-84=hybrid with flexibility, public/established company, no on-call signals, standard benefits; 50-69=high-growth startup, "fast-paced"/"high-velocity"/"wear many hats" language, implicit intensity, Series A/B; 30-49=on-call required, "always-on" culture, early-stage startup, 24/7 availability signals, explicit high-intensity language
-SCORING: weight experience_match 40%, skills_match 30%, role level gate. Most jobs 50-75. Scores below 40 require explicit justification that the role title itself is not a PM role.`;
+HOW TO SCORE experience_match (this dimension is about PM career fit, not engineering credentials):
+  - 75-90: 10+ years PM at this seniority level, domain is a direct match (same vertical, same problems)
+  - 60-75: 10+ years PM at this seniority level, adjacent domain (transferable mental models)
+  - 50-60: Right seniority but domain requires a learning curve; or domain is strong but slightly below target seniority
+  - 40-50: Meaningful gap in either seniority OR domain, but the candidate can credibly make the case
+  - Below 40: Reserved for roles where the candidate has never operated near this level, OR where the title is actually an engineering role (VP Engineering, CTO, Principal Engineer) disguised with product language
+  CRITICAL: JD requirements for "engineering leadership", "hands-on Slurm/Kubernetes/InfiniBand/RDMA expertise", or "research lab background" are NOT factors in experience_match for a VP/Director Product title. Those are tools the product leader must understand, not operate.
+
+HOW TO SCORE skills_match (this dimension is about PM skills, not technical tool mastery):
+  - 70-85: Product strategy, roadmapping, cross-functional leadership, and domain knowledge all strongly align
+  - 55-70: Strong PM toolkit, domain knowledge requires ramp
+  - 45-55: PM skills are solid, notable domain knowledge gaps
+  - Below 45: Reserved for roles requiring skills the candidate demonstrably lacks (e.g., hardware PM, consumer gaming, healthcare compliance-heavy)
+  CRITICAL: skills_match is NOT reduced because the candidate can't personally operate Slurm, InfiniBand, RDMA, or run GPU clusters. Technical depth to partner with and influence engineering is what matters.
+
+ROLE CLASSIFICATION — apply before scoring:
+  - If title contains VP/Director/Head of/Group PM/Staff PM/Principal PM → Product leadership role, use PM scoring framework above
+  - If title is VP Engineering / CTO / Principal Engineer / Director of Engineering with no "Product" → engineering role, penalize appropriately for PM candidate
+  - Vague/minimal JD (under 200 words, no real requirements) → confidence below 50, score below 60
+
+OVERALL SCORE GUIDANCE:
+  - 75-90: VP/Director PM in exact target domain (observability, AI/ML platform, infrastructure SaaS), remote-friendly, tier-1 company
+  - 65-75: VP/Director PM in adjacent domain (data platforms, devtools, cloud infra), or tier-1 company with one meaningful gap
+  - 55-65: VP/Director PM with real but bridgeable gaps (strong engineering requirements, location friction, domain stretch) → recommendation: stretch or apply_with_note
+  - 45-55: Partial fit — right level, wrong domain, or meaningful seniority gap → recommendation: apply_with_note or stretch
+  - Below 45: Wrong level, wrong function (engineering not product), or outside all target domains
+  The overall_score must be consistent with experience_match and skills_match. A PM candidate cannot score below 50 overall at a target company on a VP/Director Product title when experience_match ≥ 50 and skills_match ≥ 45.
+
+CALIBRATION EXAMPLES — use these as anchors:
+  1. "VP, Product AI/ML" at CoreWeave (requires HPC/Slurm/InfiniBand engineering depth). Candidate: 10+ yr VP-level PM, strong platform/infra background, no hands-on HPC.
+     → experience_match: 58, skills_match: 55, overall: 58, recommendation: stretch
+     Rationale: right level, tier-1 company, strong domain, real HPC depth gap but it's a Product title
+
+  2. "Director of Product Management" at Datadog (observability platform). Candidate: platform PM background, distributed systems experience.
+     → experience_match: 78, skills_match: 76, overall: 78, recommendation: apply
+
+  3. "Director of Product" at mid-size B2B SaaS (HR software, no platform angle). Candidate: strong PM, wrong domain.
+     → experience_match: 55, skills_match: 58, overall: 52, recommendation: apply_with_note
+
+  4. "VP of Engineering" (engineering management role). Candidate: is a PM.
+     → experience_match: 25, skills_match: 30, overall: 28, recommendation: skip
+
+  5. "Senior Product Manager" (IC role, not leadership). Candidate: is a VP/Director-level PM.
+     → experience_match: 65, skills_match: 70, overall: 58, recommendation: apply_with_note (overqualified)
+
+TARGET COMPANIES (company_score 80-95): CoreWeave, Anthropic, Databricks, Grafana Labs, Datadog, Elastic, New Relic, Cloudflare, Temporal, LaunchDarkly, PagerDuty, Honeycomb, Sumo Logic, Cribl, Scale AI, Glean, Stripe, GitLab, MongoDB
+
+LOCATION (candidate: Seattle, no relocation). Scan full JD for remote signals ("remote", "remotely", "remote option", "remote eligible", "work remotely"). Remote=95-100, Seattle/WA=90-95, Hybrid Seattle=80-85, Hybrid other city=60-75, In-office non-Seattle=40-60, Requires relocation=10-30.
+
+work_life_balance_score: 85-100=remote-first, explicit flexibility, generous PTO, established company; 70-84=hybrid with flexibility, no on-call signals, public/stable company; 50-69=high-growth startup, "fast-paced"/"high-velocity" language, implicit intensity; 30-49=on-call, "always-on", early-stage, 24/7 signals.
+
+compensation_score: Base $250K+=90-100, $200-250K=80-90, $160-200K=70-80, $130-160K=55-70, below $130K or unspecified=40-60.`;
 
 // Updated Search Plan prompt — explicitly surfaces FAANG career pages
 // since those companies are inaccessible via Greenhouse/Lever APIs
