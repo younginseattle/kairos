@@ -51,17 +51,26 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const SENIORITY_KEYWORDS = [
   'director', 'head of product',
-  'vp of product', 'vp product', 'vp, product',
+  'vp of product', 'vp product', 'vp, product', 'vp, products',
+  'vp of products', 'vp products',
   'vice president of product', 'vice president, product',
+  'vice president of products', 'vice president, products',
   'group product manager', 'group pm',
   'staff product manager', 'staff pm',
   'principal product manager', 'principal pm',
+  // Catch "Principal <domain> Product Manager" and similar patterns
+  // where a domain word sits between the seniority level and "product"
+  'senior product manager',
 ];
 const EXCLUSION_KEYWORDS = [
-  'marketing', 'engineer', 'developer', 'designer', 'analyst',
+  'marketing', 'engineer', 'designer', 'analyst',
   'counsel', 'finance', 'sales', 'recruiter', 'data science',
   'research', 'operations', 'security', 'design',
 ];
+
+// "developer" is intentionally excluded from EXCLUSION_KEYWORDS because
+// VP/Director PM roles for "developer platform" products would be wrongly blocked.
+// "engineer" already catches software engineer job titles.
 const NON_US_COUNTRIES = [
   'united kingdom', 'england', 'scotland', 'wales', ', uk',
   'canada', 'germany', 'netherlands', 'france', 'spain', 'italy',
@@ -82,11 +91,21 @@ const BLOCKED_URL_DOMAINS = [
   'dice.com',
 ];
 
+// Regex patterns for seniority levels where a domain word may sit between
+// the level and "product" (e.g. "Principal AI Product Manager").
+const SENIORITY_PATTERNS = [
+  /\bprincipal\b.{0,30}\bproduct\b/i,
+  /\bstaff\b.{0,30}\bproduct\b/i,
+  /\bvice\s+president\b.{0,30}\bproduct/i,
+  /\bvp\b.{0,20}\bproduct/i,
+];
+
 function isRelevantTitle(title) {
   const t = title.toLowerCase();
   if (!t.includes('product')) return false;
   if (EXCLUSION_KEYWORDS.some(kw => t.includes(kw))) return false;
-  return SENIORITY_KEYWORDS.some(kw => t.includes(kw));
+  if (SENIORITY_KEYWORDS.some(kw => t.includes(kw))) return true;
+  return SENIORITY_PATTERNS.some(re => re.test(t));
 }
 
 function isUSLocation(location) {
