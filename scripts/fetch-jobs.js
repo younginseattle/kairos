@@ -242,7 +242,7 @@ function parseJobsFromBody(body) {
     // inline in location strings, e.g. "United States · 1 school alum".
     const lines = before
       .split(/\r?\n/)
-      .map(l => l.trim().replace(/\s*[·•]\s*\d+\s+school\s+alum\w*/gi, '').trim())
+      .map(l => l.trim().replace(/\s*[·•‧․·•|]\s*\d+\s+school\s+alum\w*/gi, '').trim())
       .filter(l => l.length > 2 && l.length < 150 && !shouldSkipLine(l)
                    && !/^https?:\/\//i.test(l));   // skip any URL lines
 
@@ -254,7 +254,8 @@ function parseJobsFromBody(body) {
     // Detect that pattern: if the second-to-last line looks like a department
     // description (long, contains conjunctions) rather than a company name,
     // use the line above it as the company instead.
-    let location = lines[lines.length - 1] || 'United States';
+    let location = (lines[lines.length - 1] || 'United States')
+      .replace(/\s*[·•‧․·•|]\s*\d+\s+school\s+alum\w*/gi, '').trim();
     let company  = lines[lines.length - 2] || '';
     let companyOffset = 2;
     if (company.length > 40 && /\b(and|&)\b/i.test(company)) {
@@ -273,6 +274,10 @@ function parseJobsFromBody(body) {
         break;
       }
     }
+
+    // Strip department suffix embedded in title via em-dash or en-dash
+    // e.g. "Director of Product — M&A, Strategy and Technology Partnerships"
+    title = title.replace(/\s*[—–]\s*.{10,}$/, '').trim();
 
     if (!title || title.length > 120 || company.length > 100) continue;
     if (!isRelevantTitle(title)) continue;
