@@ -9,6 +9,10 @@ on:
         description: 'How many hours back to scan (default 7)'
         required: false
         default: '7'
+      verbose:
+        description: 'Set to true to log every URL found and filter decision'
+        required: false
+        default: 'false'
 
 jobs:
   fetch:
@@ -33,4 +37,5 @@ jobs:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FETCH_INTERVAL_HOURS:      ${{ inputs.hours || '6' }}
+          VERBOSE:                   ${{ inputs.verbose || 'false' }}
         run: node fetch-jobs.js

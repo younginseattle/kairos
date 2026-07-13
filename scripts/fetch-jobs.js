@@ -223,15 +223,19 @@ function shouldSkipLine(line) {
   return SKIP_PATTERNS.some(re => re.test(line));
 }
 
-function parseJobsFromBody(body) {
+const VERBOSE = process.env.VERBOSE === 'true';
+
+function parseJobsFromBody(body, emailIndex = 0) {
   const jobs = [];
 
   // Find every LinkedIn job URL — handles /jobs/view/ and /comm/jobs/view/
   // with or without tracking params or trailing slash
   const urlRe = /https?:\/\/(?:www\.)?linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)[^\s]*/g;
   let m;
+  let urlCount = 0;
 
   while ((m = urlRe.exec(body)) !== null) {
+    urlCount++;
     const jobId = m[1];
     const url   = `https://www.linkedin.com/jobs/view/${jobId}/`;
 
@@ -247,26 +251,25 @@ function parseJobsFromBody(body) {
       .filter(l => l.length > 2 && l.length < 150 && !shouldSkipLine(l)
                    && !/^https?:\/\//i.test(l));   // skip any URL lines
 
-    if (lines.length < 2) continue;
+    if (VERBOSE) {
+      console.log(`\n  [email ${emailIndex + 1}] URL #${urlCount}: job ${jobId}`);
+      console.log(`    Lines before URL: [${lines.slice(-5).map(l => JSON.stringify(l)).join(', ')}]`);
+    }
 
-    // The last meaningful lines before the URL are: title, company, location.
-    // LinkedIn now sometimes injects a business-unit/vertical line between
-    // company and location (e.g. "M&A, Strategy and Technology Partnerships").
-    // Detect that pattern: if the second-to-last line looks like a department
-    // description (long, contains conjunctions) rather than a company name,
-    // use the line above it as the company instead.
+    if (lines.length < 2) {
+      if (VERBOSE) console.log(`    ✗ SKIP: fewer than 2 usable lines`);
+      continue;
+    }
+
     let location = (lines[lines.length - 1] || 'United States')
       .replace(/[^\w\s]\s*\d+\s+school\s+alum\w*/gi, '').replace(/\s{2,}/g, ' ').trim();
     let company  = lines[lines.length - 2] || '';
     let companyOffset = 2;
     if (company.length > 40 && /\b(and|&)\b/i.test(company)) {
-      // Looks like a department/vertical — skip it
       companyOffset = 3;
       company = lines[lines.length - 3] || lines[lines.length - 2];
     }
 
-    // Scan backwards to find the title line — it must contain a seniority
-    // keyword. This is robust against any remaining noise lines.
     let title = lines[lines.length - (companyOffset + 1)] || company;
     for (let i = lines.length - (companyOffset + 1); i >= 0; i--) {
       const candidate = lines[i].toLowerCase();
@@ -277,15 +280,41 @@ function parseJobsFromBody(body) {
     }
 
     // Strip department suffix embedded in title via em-dash or en-dash
-    // e.g. "Director of Product — M&A, Strategy and Technology Partnerships"
     title = title.replace(/\s*[—–]\s*.{10,}$/, '').trim();
 
-    if (!title || title.length > 120 || company.length > 100) continue;
-    if (!isRelevantTitle(title)) continue;
-    if (!isUSLocation(location)) continue;
-    if (!isAllowedURL(url)) continue;
+    if (VERBOSE) {
+      console.log(`    Parsed → title: ${JSON.stringify(title)}  company: ${JSON.stringify(company)}  location: ${JSON.stringify(location)}`);
+    }
 
+    if (!title || title.length > 120 || company.length > 100) {
+      if (VERBOSE) console.log(`    ✗ SKIP: title/company length check failed`);
+      continue;
+    }
+    if (!isRelevantTitle(title)) {
+      if (VERBOSE) {
+        const t = title.toLowerCase();
+        const hasProduct = t.includes('product');
+        const hasSeniority = SENIORITY_KEYWORDS.some(kw => t.includes(kw));
+        const excluded = EXCLUSION_KEYWORDS.find(kw => t.includes(kw));
+        console.log(`    ✗ SKIP: isRelevantTitle failed — hasProduct:${hasProduct} hasSeniority:${hasSeniority} excluded:${excluded || 'none'}`);
+      }
+      continue;
+    }
+    if (!isUSLocation(location)) {
+      if (VERBOSE) console.log(`    ✗ SKIP: non-US location: ${JSON.stringify(location)}`);
+      continue;
+    }
+    if (!isAllowedURL(url)) {
+      if (VERBOSE) console.log(`    ✗ SKIP: blocked URL domain`);
+      continue;
+    }
+
+    if (VERBOSE) console.log(`    ✓ PASS: "${title}" @ ${company}`);
     jobs.push({ title, company, location, url });
+  }
+
+  if (VERBOSE && urlCount === 0) {
+    console.log(`  [email ${emailIndex + 1}] No LinkedIn job URLs found in body`);
   }
 
   return jobs;
@@ -345,7 +374,7 @@ async function main() {
 
   // 2. Parse all jobs across all emails
   console.log('── Parsing job listings…');
-  const allJobs = bodies.flatMap(parseJobsFromBody);
+  const allJobs = bodies.flatMap((body, i) => parseJobsFromBody(body, i));
 
   // Dedup within this batch by URL
   const seen     = new Set();
