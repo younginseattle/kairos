@@ -225,6 +225,8 @@ const SKIP_PATTERNS = [
   /connection/i,
   /alumni/i,
   /actively hiring/i,
+  /actively recruiting/i,
+  /^promoted by hirer$/i,
   /apply with/i,
   /match your preferences/i,
   /new jobs? for you/i,
@@ -329,14 +331,6 @@ function parseJobsFromHtml(html, emailIndex = 0) {
     urlCount++;
     const url = `https://www.linkedin.com/jobs/view/${jobId}/`;
 
-    // Title: prefer an anchor with substantial visible text (the text-link,
-    // not the image-wrapped logo link).
-    let title = '';
-    for (const el of anchors) {
-      const t = cleanLine($(el).text());
-      if (t.length > 3 && !shouldSkipLine(t)) { title = t; break; }
-    }
-
     // Card boundary: walk up from the first anchor until we find an
     // ancestor whose text is a reasonable card size and doesn't contain
     // a second job's anchor (avoids spanning multiple cards).
@@ -362,23 +356,48 @@ function parseJobsFromHtml(html, emailIndex = 0) {
       if (/logo$/i.test(alt)) company = alt.replace(/\s*logo$/i, '').trim();
     });
 
-    // Fallback text lines within the card — split on block-level boundaries
-    // rather than raw newlines, so each line maps to one visual element.
+    // Leaf text lines within the card, split on block-level boundaries rather
+    // than raw newlines so each line maps to one visual element. LinkedIn
+    // sometimes renders "Company · Location" as a single text node — split
+    // on " · " so downstream matching sees them as two separate candidates
+    // instead of one unusable blob.
     const blockLines = [];
     $card.find('*').addBack().each((_, node) => {
       if (node.children?.some(c => c.type === 'tag')) return; // only leaf-ish nodes
-      const t = cleanLine($(node).text());
-      if (t && t.length > 1 && t.length < 150 && !shouldSkipLine(t) && !/^https?:\/\//i.test(t)) {
-        blockLines.push(t);
+      const raw = cleanLine($(node).text());
+      if (!raw || raw.length < 2 || raw.length > 150 || /^https?:\/\//i.test(raw)) return;
+      for (const part of raw.split(/\s*·\s*/)) {
+        const t = cleanLine(part);
+        if (t.length > 1 && !shouldSkipLine(t)) blockLines.push(t);
       }
     });
-    const uniqueLines = [...new Set(blockLines)].filter(l => l !== title && l !== company);
+    const uniqueLines = [...new Set(blockLines)];
 
-    if (!company) {
-      company = uniqueLines.find(l => l.length < 60 && !/\b(remote|united states|,\s*[A-Z]{2}\b)/i.test(l)) || uniqueLines[0] || '';
+    // Title: an anchor's own text is unreliable — LinkedIn sometimes wraps
+    // the entire card (title + company + location + "Actively recruiting"
+    // badge) inside one <a>, which would swallow all of it as "the title".
+    // Scan the card's individual leaf lines instead and take the first one
+    // that actually reads like a seniority-level PM title — the same
+    // reliable signal the plaintext fallback parser uses.
+    let title = uniqueLines.find(l =>
+      SENIORITY_KEYWORDS.some(kw => l.toLowerCase().includes(kw)) ||
+      SENIORITY_PATTERNS.some(re => re.test(l))
+    ) || '';
+    if (!title) {
+      // Rare fallback: no leaf line matched — take the first anchor with
+      // substantial, non-boilerplate text.
+      for (const el of anchors) {
+        const t = cleanLine($(el).text());
+        if (t.length > 3 && t.length < 150 && !shouldSkipLine(t)) { title = t; break; }
+      }
     }
-    const location = uniqueLines.find(l => l !== company && /\b(remote|united states|,\s*[A-Z]{2}\b)/i.test(l))
-      || uniqueLines.find(l => l !== company)
+
+    const remaining = uniqueLines.filter(l => l !== title && l !== company);
+    if (!company) {
+      company = remaining.find(l => l.length < 60 && !/\b(remote|united states|,\s*[A-Z]{2}\b)/i.test(l)) || remaining[0] || '';
+    }
+    const location = remaining.find(l => l !== company && /\b(remote|united states|,\s*[A-Z]{2}\b)/i.test(l))
+      || remaining.find(l => l !== company)
       || 'United States';
 
     const job = applyCommonFilters(title, company, location, url, emailIndex, urlCount, 'html');
