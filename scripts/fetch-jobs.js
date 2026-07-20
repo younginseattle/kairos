@@ -99,6 +99,10 @@ const SENIORITY_PATTERNS = [
   /\bstaff\b.{0,30}\bproduct\b/i,
   /\bvice\s+president\b.{0,30}\bproduct/i,
   /\bvp\b.{0,20}\bproduct/i,
+  // "Sr." / "Sr" abbreviation — e.g. "Sr. Product Manager, Vehicle Health
+  // Alerts" was silently dropped because SENIORITY_KEYWORDS only matched
+  // the spelled-out "senior product manager".
+  /\bsr\.?\b.{0,30}\bproduct\b/i,
 ];
 
 function isRelevantTitle(title) {
