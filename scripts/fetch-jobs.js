@@ -13,6 +13,7 @@
  */
 
 import ws from 'ws';
+import * as cheerio from 'cheerio';
 
 // Must be set before @supabase/supabase-js is loaded — it checks
 // globalThis.WebSocket at import time and throws on Node < 22 without it.
@@ -170,14 +171,19 @@ async function fetchEmailBodies() {
   const threads = threadList.threads || [];
   console.log(`  Found ${threads.length} matching thread(s)`);
 
+  // Returns { html, text } per thread — html is preferred for parsing
+  // (real DOM boundaries per job card); text is kept as a fallback for
+  // whenever html parsing yields nothing (missing html part, or a
+  // template cheerio can't make sense of).
   const bodies = [];
   for (const { id } of threads) {
     try {
       const thread = await gmailGet(accessToken, `/threads/${id}`, { format: 'full' });
       const firstMessage = thread.messages?.[0];
       if (!firstMessage) continue;
-      const body = extractPlainText(firstMessage.payload);
-      if (body) bodies.push(body);
+      const html = extractPartByMime(firstMessage.payload, 'text/html');
+      const text = extractPartByMime(firstMessage.payload, 'text/plain');
+      if (html || text) bodies.push({ html, text });
     } catch (err) {
       console.error(`  ✗ Could not fetch thread ${id}:`, err.message);
     }
@@ -185,19 +191,18 @@ async function fetchEmailBodies() {
   return bodies;
 }
 
-function extractPlainText(payload) {
+function extractPartByMime(payload, mimeType) {
   if (!payload) return '';
 
-  // Single-part plain text
-  if (payload.mimeType === 'text/plain' && payload.body?.data) {
+  if (payload.mimeType === mimeType && payload.body?.data) {
     return Buffer.from(payload.body.data, 'base64').toString('utf-8');
   }
 
-  // Multipart — walk parts recursively, prefer text/plain
+  // Multipart — walk parts recursively, first match wins
   if (payload.parts) {
     for (const part of payload.parts) {
-      const text = extractPlainText(part);
-      if (text) return text;
+      const found = extractPartByMime(part, mimeType);
+      if (found) return found;
     }
   }
   return '';
@@ -244,11 +249,151 @@ function shouldSkipLine(line) {
 
 const VERBOSE = process.env.VERBOSE === 'true';
 
-function parseJobsFromBody(body, emailIndex = 0) {
-  const jobs = [];
+const JOB_URL_RE = /^https?:\/\/(?:www\.)?linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)/i;
 
-  // Find every LinkedIn job URL — handles /jobs/view/ and /comm/jobs/view/
-  // with or without tracking params or trailing slash
+function cleanLine(s) {
+  return (s || '')
+    .replace(/[^\w\s]\s*\d+\s+school\s+alum\w*/gi, '') // "· 1 school alum"
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function applyCommonFilters(title, company, location, url, emailIndex, urlCount, strategy) {
+  title = title.replace(/\s*[—–]\s*.{10,}$/, '').trim(); // strip dept suffix
+  if (VERBOSE) {
+    console.log(`\n  [email ${emailIndex + 1}] (${strategy}) URL #${urlCount}: ${url}`);
+    console.log(`    Parsed → title: ${JSON.stringify(title)}  company: ${JSON.stringify(company)}  location: ${JSON.stringify(location)}`);
+  }
+  if (!title || title.length > 120 || company.length > 100) {
+    if (VERBOSE) console.log(`    ✗ SKIP: title/company length check failed`);
+    return null;
+  }
+  if (!isRelevantTitle(title)) {
+    if (VERBOSE) {
+      const t = title.toLowerCase();
+      const hasProduct = t.includes('product');
+      const hasSeniority = SENIORITY_KEYWORDS.some(kw => t.includes(kw));
+      const excluded = EXCLUSION_KEYWORDS.find(kw => t.includes(kw));
+      console.log(`    ✗ SKIP: isRelevantTitle failed — hasProduct:${hasProduct} hasSeniority:${hasSeniority} excluded:${excluded || 'none'}`);
+    }
+    return null;
+  }
+  if (!isUSLocation(location)) {
+    if (VERBOSE) console.log(`    ✗ SKIP: non-US location: ${JSON.stringify(location)}`);
+    return null;
+  }
+  if (!isAllowedURL(url)) {
+    if (VERBOSE) console.log(`    ✗ SKIP: blocked URL domain`);
+    return null;
+  }
+  if (VERBOSE) console.log(`    ✓ PASS: "${title}" @ ${company}`);
+  return { title, company, location, url };
+}
+
+// ── Primary strategy: parse the HTML body with cheerio ─────────────
+//
+// LinkedIn digest emails render each job as a self-contained card
+// (a table row / div block) containing a logo <img alt="Company logo">
+// and one or two <a href="…jobs/view/…"> links (an image-wrapped link
+// and a text link — both point at the same job). Anchoring on that DOM
+// boundary — instead of "N lines of plaintext before the URL" — means
+// company/title/location extraction only ever looks inside the correct
+// card, so it can't bleed into a neighboring job's text.
+function parseJobsFromHtml(html, emailIndex = 0) {
+  const jobs = [];
+  let $;
+  try {
+    $ = cheerio.load(html);
+  } catch (err) {
+    if (VERBOSE) console.log(`  [email ${emailIndex + 1}] ✗ cheerio.load failed: ${err.message}`);
+    return jobs;
+  }
+
+  // Group all matching anchors by job id (image-link + text-link share one id)
+  const byJobId = new Map();
+  $('a[href*="jobs/view/"]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const match = JOB_URL_RE.exec(href);
+    if (!match) return;
+    const jobId = match[1];
+    if (!byJobId.has(jobId)) byJobId.set(jobId, []);
+    byJobId.get(jobId).push(el);
+  });
+
+  let urlCount = 0;
+  for (const [jobId, anchors] of byJobId) {
+    urlCount++;
+    const url = `https://www.linkedin.com/jobs/view/${jobId}/`;
+
+    // Title: prefer an anchor with substantial visible text (the text-link,
+    // not the image-wrapped logo link).
+    let title = '';
+    for (const el of anchors) {
+      const t = cleanLine($(el).text());
+      if (t.length > 3 && !shouldSkipLine(t)) { title = t; break; }
+    }
+
+    // Card boundary: walk up from the first anchor until we find an
+    // ancestor whose text is a reasonable card size and doesn't contain
+    // a second job's anchor (avoids spanning multiple cards).
+    let $card = $(anchors[0]);
+    for (let depth = 0; depth < 6; depth++) {
+      const $parent = $card.parent();
+      if (!$parent.length) break;
+      const otherJobIds = new Set();
+      $parent.find('a[href*="jobs/view/"]').each((_, a) => {
+        const m = JOB_URL_RE.exec($(a).attr('href') || '');
+        if (m && m[1] !== jobId) otherJobIds.add(m[1]);
+      });
+      if (otherJobIds.size > 0) break; // parent spans multiple cards — stop here
+      $card = $parent;
+      if ($card.text().trim().length > 40) break; // enough context, stop growing
+    }
+
+    // Company: an <img alt="X logo"> inside the card is the most reliable signal.
+    let company = '';
+    $card.find('img[alt]').each((_, img) => {
+      if (company) return;
+      const alt = cleanLine($(img).attr('alt') || '');
+      if (/logo$/i.test(alt)) company = alt.replace(/\s*logo$/i, '').trim();
+    });
+
+    // Fallback text lines within the card — split on block-level boundaries
+    // rather than raw newlines, so each line maps to one visual element.
+    const blockLines = [];
+    $card.find('*').addBack().each((_, node) => {
+      if (node.children?.some(c => c.type === 'tag')) return; // only leaf-ish nodes
+      const t = cleanLine($(node).text());
+      if (t && t.length > 1 && t.length < 150 && !shouldSkipLine(t) && !/^https?:\/\//i.test(t)) {
+        blockLines.push(t);
+      }
+    });
+    const uniqueLines = [...new Set(blockLines)].filter(l => l !== title && l !== company);
+
+    if (!company) {
+      company = uniqueLines.find(l => l.length < 60 && !/\b(remote|united states|,\s*[A-Z]{2}\b)/i.test(l)) || uniqueLines[0] || '';
+    }
+    const location = uniqueLines.find(l => l !== company && /\b(remote|united states|,\s*[A-Z]{2}\b)/i.test(l))
+      || uniqueLines.find(l => l !== company)
+      || 'United States';
+
+    const job = applyCommonFilters(title, company, location, url, emailIndex, urlCount, 'html');
+    if (job) jobs.push(job);
+  }
+
+  if (VERBOSE && urlCount === 0) {
+    console.log(`  [email ${emailIndex + 1}] (html) No LinkedIn job URLs found`);
+  }
+  return jobs;
+}
+
+// ── Fallback strategy: the original plaintext line-position heuristic ──
+// Kept only for emails where no usable html part exists, or where html
+// parsing finds zero cards (e.g. a template cheerio can't make sense of).
+// This is intentionally the old, less reliable logic — it's a safety net,
+// not the primary path anymore.
+function parseJobsFromPlainText(body, emailIndex = 0) {
+  const jobs = [];
   const urlRe = /https?:\/\/(?:www\.)?linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)[^\s]*/g;
   let m;
   let urlCount = 0;
@@ -258,30 +403,18 @@ function parseJobsFromBody(body, emailIndex = 0) {
     const jobId = m[1];
     const url   = `https://www.linkedin.com/jobs/view/${jobId}/`;
 
-    // Grab the text block before this URL (up to 600 chars back)
     const before = body.slice(Math.max(0, m.index - 600), m.index);
-
-    // Split into non-empty, non-noise lines — take the last few.
-    // Also strip LinkedIn's "· N school alum(s)" annotation that appears
-    // inline in location strings, e.g. "United States · 1 school alum".
     const lines = before
       .split(/\r?\n/)
-      .map(l => l.trim().replace(/[^\w\s]\s*\d+\s+school\s+alum\w*/gi, '').replace(/\s{2,}/g, ' ').trim())
-      .filter(l => l.length > 2 && l.length < 150 && !shouldSkipLine(l)
-                   && !/^https?:\/\//i.test(l));   // skip any URL lines
-
-    if (VERBOSE) {
-      console.log(`\n  [email ${emailIndex + 1}] URL #${urlCount}: job ${jobId}`);
-      console.log(`    Lines before URL: [${lines.slice(-5).map(l => JSON.stringify(l)).join(', ')}]`);
-    }
+      .map(l => cleanLine(l))
+      .filter(l => l.length > 2 && l.length < 150 && !shouldSkipLine(l) && !/^https?:\/\//i.test(l));
 
     if (lines.length < 2) {
-      if (VERBOSE) console.log(`    ✗ SKIP: fewer than 2 usable lines`);
+      if (VERBOSE) console.log(`\n  [email ${emailIndex + 1}] (text) URL #${urlCount}: job ${jobId}\n    ✗ SKIP: fewer than 2 usable lines`);
       continue;
     }
 
-    let location = (lines[lines.length - 1] || 'United States')
-      .replace(/[^\w\s]\s*\d+\s+school\s+alum\w*/gi, '').replace(/\s{2,}/g, ' ').trim();
+    let location = cleanLine(lines[lines.length - 1] || 'United States');
     let company  = lines[lines.length - 2] || '';
     let companyOffset = 2;
     if (company.length > 40 && /\b(and|&)\b/i.test(company)) {
@@ -298,45 +431,27 @@ function parseJobsFromBody(body, emailIndex = 0) {
       }
     }
 
-    // Strip department suffix embedded in title via em-dash or en-dash
-    title = title.replace(/\s*[—–]\s*.{10,}$/, '').trim();
-
-    if (VERBOSE) {
-      console.log(`    Parsed → title: ${JSON.stringify(title)}  company: ${JSON.stringify(company)}  location: ${JSON.stringify(location)}`);
-    }
-
-    if (!title || title.length > 120 || company.length > 100) {
-      if (VERBOSE) console.log(`    ✗ SKIP: title/company length check failed`);
-      continue;
-    }
-    if (!isRelevantTitle(title)) {
-      if (VERBOSE) {
-        const t = title.toLowerCase();
-        const hasProduct = t.includes('product');
-        const hasSeniority = SENIORITY_KEYWORDS.some(kw => t.includes(kw));
-        const excluded = EXCLUSION_KEYWORDS.find(kw => t.includes(kw));
-        console.log(`    ✗ SKIP: isRelevantTitle failed — hasProduct:${hasProduct} hasSeniority:${hasSeniority} excluded:${excluded || 'none'}`);
-      }
-      continue;
-    }
-    if (!isUSLocation(location)) {
-      if (VERBOSE) console.log(`    ✗ SKIP: non-US location: ${JSON.stringify(location)}`);
-      continue;
-    }
-    if (!isAllowedURL(url)) {
-      if (VERBOSE) console.log(`    ✗ SKIP: blocked URL domain`);
-      continue;
-    }
-
-    if (VERBOSE) console.log(`    ✓ PASS: "${title}" @ ${company}`);
-    jobs.push({ title, company, location, url });
+    const job = applyCommonFilters(title, company, location, url, emailIndex, urlCount, 'text');
+    if (job) jobs.push(job);
   }
 
   if (VERBOSE && urlCount === 0) {
-    console.log(`  [email ${emailIndex + 1}] No LinkedIn job URLs found in body`);
+    console.log(`  [email ${emailIndex + 1}] (text) No LinkedIn job URLs found in body`);
   }
-
   return jobs;
+}
+
+// Runs the html parser first; only falls back to plaintext if html
+// parsing was unavailable or came back empty, so a template change on
+// LinkedIn's side degrades gracefully instead of losing the email entirely.
+function parseJobsFromEmail({ html, text }, emailIndex = 0) {
+  if (html) {
+    const htmlJobs = parseJobsFromHtml(html, emailIndex);
+    if (htmlJobs.length > 0) return htmlJobs;
+    if (VERBOSE) console.log(`  [email ${emailIndex + 1}] html parse found 0 jobs — falling back to plaintext`);
+  }
+  if (text) return parseJobsFromPlainText(text, emailIndex);
+  return [];
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -393,7 +508,7 @@ async function main() {
 
   // 2. Parse all jobs across all emails
   console.log('── Parsing job listings…');
-  const allJobs = bodies.flatMap((body, i) => parseJobsFromBody(body, i));
+  const allJobs = bodies.flatMap((body, i) => parseJobsFromEmail(body, i));
 
   // Dedup within this batch by URL
   const seen     = new Set();
@@ -435,7 +550,14 @@ async function main() {
   console.log('   Done ✓\n');
 }
 
-main().catch(err => {
-  console.error('✗ Fatal error:', err.message);
-  process.exit(1);
-});
+// Guard so the module can be imported (e.g. from tests) without
+// immediately hitting live Gmail/Supabase APIs — only run when this
+// file is executed directly (`node fetch-jobs.js`).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => {
+    console.error('✗ Fatal error:', err.message);
+    process.exit(1);
+  });
+}
+
+export { parseJobsFromHtml, parseJobsFromPlainText, parseJobsFromEmail, isRelevantTitle, isUSLocation };
