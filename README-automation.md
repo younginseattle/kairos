@@ -1,6 +1,6 @@
 # Kairos — Gmail Job Alert Automation
 
-Fetches LinkedIn and Google job alert emails every 6 hours, parses job listings, and inserts new ones into Supabase automatically via GitHub Actions.
+Fetches LinkedIn job alert emails every 6 hours, parses job listings, and inserts new ones into Supabase automatically via GitHub Actions. (Google's own job postings are handled separately by `scripts/scan-google-jobs.mjs` — see that script's header comment.)
 
 ---
 
