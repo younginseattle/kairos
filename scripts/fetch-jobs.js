@@ -489,17 +489,32 @@ function buildSupabaseClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+// LinkedIn serves the same posting at both linkedin.com/jobs/view/{id}/ and
+// linkedin.com/comm/jobs/view/{id} (no trailing slash) — a real duplicate
+// missed several rows because they were inserted as different URL strings
+// for the same job id (e.g. by scripts/insert-linkedin-principal-pms.mjs,
+// which doesn't go through this file's URL construction). Dedup by the
+// extracted numeric id when the URL is a LinkedIn job link, so any variant
+// matches; fall back to exact string match for everything else.
+function extractLinkedInJobId(url) {
+  const m = /linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)/.exec(url || '');
+  return m ? m[1] : null;
+}
+
 async function urlExists(supabase, url) {
-  const { data, error } = await supabase
-    .from('jobs')
-    .select('id')
-    .eq('url', url)
-    .maybeSingle();
+  const jobId = extractLinkedInJobId(url);
+  // .limit(1) + array-length check rather than .maybeSingle() — the ilike
+  // pattern (and, given pre-existing duplicate rows, even an exact match in
+  // rare cases) can match more than one row, and .maybeSingle() throws if so.
+  const query = jobId
+    ? supabase.from('jobs').select('id').ilike('url', `%jobs/view/${jobId}%`)
+    : supabase.from('jobs').select('id').eq('url', url);
+  const { data, error } = await query.limit(1);
   if (error) {
     console.error(`  ✗ Supabase dedup check failed for ${url}:`, error.message);
     return false; // assume not duplicate so we don't silently drop
   }
-  return !!data;
+  return Array.isArray(data) && data.length > 0;
 }
 
 async function insertJob(supabase, job) {
