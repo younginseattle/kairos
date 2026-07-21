@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /**
- * Fetches LinkedIn and Google job alert emails from Gmail,
- * parses job listings, and inserts new ones into Supabase.
+ * Fetches LinkedIn job alert emails from Gmail, parses job listings, and
+ * inserts new ones into Supabase.
+ *
+ * (Google's own job postings are handled separately by
+ * scripts/scan-google-jobs.mjs, which scans Google Careers alert emails —
+ * a distinct mechanism from LinkedIn's job-alert digests parsed here.)
  *
  * Required environment variables:
  *   GMAIL_CLIENT_ID
@@ -27,7 +31,7 @@ const { createClient } = await import('@supabase/supabase-js');
 
 const INTERVAL_HOURS  = parseInt(process.env.FETCH_INTERVAL_HOURS || '6', 10);
 const LOOKBACK_HOURS  = INTERVAL_HOURS + 1; // overlap to prevent gaps
-const GMAIL_SENDERS   = 'from:(jobalerts-noreply@linkedin.com OR googlealerts-noreply@google.com)';
+const GMAIL_SENDERS   = 'from:jobalerts-noreply@linkedin.com';
 const SEARCH_QUERY    = `${GMAIL_SENDERS} newer_than:${LOOKBACK_HOURS}h`;
 
 // Accept GOOGLE_* or GMAIL_* env vars interchangeably
