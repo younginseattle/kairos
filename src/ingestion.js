@@ -37,18 +37,17 @@ export const SOURCES = [
   { id: "sumologic",            ats: "greenhouse", tier: 1, domain: "observability"                    },
   { id: "arizeai",              ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
   // Previously noted as unreachable ("Host not in allowlist") — that was this dev
-  // sandbox's own outbound proxy policy blocking ashbyhq.com/rippling.com, not a
-  // real restriction on these companies' boards. Confirmed live board slugs via
-  // web search; GitHub Actions runners have open internet so these should resolve
-  // there even though they can't be curl-tested from this sandbox.
+  // sandbox's own outbound proxy policy blocking ashbyhq.com, not a real
+  // restriction on these companies' boards. Confirmed live via a real GitHub
+  // Actions run: fiddler-ai and Braintrust are real, reachable Ashby boards
+  // (see fetchAshbyJobs — a board with zero current postings looks identical
+  // to a broken one unless you treat null jobPostings as "no jobs").
+  // observeinc and galileo (Rippling) returned genuine HTTP 404 from that same
+  // run despite live, human-browsable pages at those URLs — their public APIs
+  // are evidently disabled even though the site itself works. Not re-added;
+  // use LinkedIn alerts for those two instead.
   { id: "fiddler-ai",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
-  { id: "observeinc",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
   { id: "Braintrust",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
-  // Rippling's public API shape is unverified from this sandbox (both direct curl
-  // and WebFetch were blocked/403'd) — fetchRipplingJobs's endpoint assumption
-  // (`ats.rippling.com/api/v2/jobs?companySlug=`) needs confirming against a real
-  // Actions run; the public board itself is confirmed live at ats.rippling.com/galileo/jobs.
-  { id: "galileo",              ats: "rippling",   tier: 1, domain: "observability",  broadFilter: true },
 
   // ── AI / ML platforms (broad filter — any senior PM role) ────
   { id: "anthropic",            ats: "greenhouse", tier: 1, domain: "platform",       broadFilter: true },
@@ -90,12 +89,15 @@ export const SOURCES = [
   // ── Infrastructure / data platform (expanded) ─────────────────
   { id: "fastly",            ats: "greenhouse", tier: 1, domain: "infrastructure"            },
   { id: "fivetran",          ats: "greenhouse", tier: 2, domain: "platform"                  },
-  { id: "snowflakecomputing", ats: "greenhouse", tier: 1, domain: "platform"                 },
+  // snowflakecomputing and airbyte returned genuine HTTP 404 from a real GitHub
+  // Actions run despite live, human-browsable Greenhouse pages at those tokens —
+  // public API access is evidently disabled for both. Not re-added; use
+  // LinkedIn alerts for these instead.
   { id: "confluent",         ats: "ashby",      tier: 1, domain: "platform",  broadFilter: true },
-  { id: "airbyte",           ats: "greenhouse", tier: 2, domain: "platform"                  },
 
   // ── Developer / software delivery tools (expanded) ────────────
-  { id: "retool",            ats: "greenhouse", tier: 2, domain: "devtools"                  },
+  // retool returned HTTP 404 from a real Actions run for the same reason —
+  // dropped rather than re-guessed. Use LinkedIn alerts for it instead.
   { id: "posthog",           ats: "ashby",      tier: 2, domain: "devtools",  broadFilter: true },
 
   // ── Defense tech ─────────────────────────────────────────────
@@ -346,7 +348,15 @@ async function fetchAshbyJobs(companyId) {
   const res = await fetchWithTimeout(`https://api.ashbyhq.com/posting-api/job-board/${companyId}`);
   if (!res.ok) throw new Error(`Ashby fetch failed for "${companyId}" — HTTP ${res.status}`);
   const data = await res.json();
-  if (!Array.isArray(data.jobPostings)) throw new Error(`Ashby: unexpected response for "${companyId}"`);
+  // Ashby appears to return jobPostings as null/absent (not []) when a real,
+  // reachable board currently has zero open postings — treat that as "no
+  // jobs" rather than a hard failure. Only genuinely unrecognized shapes
+  // (no jobPostings key at all) are treated as an error, with the actual
+  // response keys logged so a real failure is diagnosable instead of opaque.
+  if (data.jobPostings === undefined) {
+    throw new Error(`Ashby: unexpected response shape for "${companyId}" — no jobPostings field (keys: ${Object.keys(data).join(", ") || "none"})`);
+  }
+  if (!Array.isArray(data.jobPostings)) return [];
   return data.jobPostings.map(job => ({
     title:       job.title,
     location:    job.locationName || null,
