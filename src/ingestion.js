@@ -36,8 +36,19 @@ export const SOURCES = [
   { id: "honeycomb",            ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
   { id: "sumologic",            ats: "greenhouse", tier: 1, domain: "observability"                    },
   { id: "arizeai",              ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
-  // Note: fiddler-ai, observeinc, braintrust (Ashby) and galileo (Rippling) return
-  // "Host not in allowlist" — their boards restrict public API access. Use LinkedIn alerts.
+  // Previously noted as unreachable ("Host not in allowlist") — that was this dev
+  // sandbox's own outbound proxy policy blocking ashbyhq.com/rippling.com, not a
+  // real restriction on these companies' boards. Confirmed live board slugs via
+  // web search; GitHub Actions runners have open internet so these should resolve
+  // there even though they can't be curl-tested from this sandbox.
+  { id: "fiddler-ai",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+  { id: "observeinc",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+  { id: "Braintrust",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+  // Rippling's public API shape is unverified from this sandbox (both direct curl
+  // and WebFetch were blocked/403'd) — fetchRipplingJobs's endpoint assumption
+  // (`ats.rippling.com/api/v2/jobs?companySlug=`) needs confirming against a real
+  // Actions run; the public board itself is confirmed live at ats.rippling.com/galileo/jobs.
+  { id: "galileo",              ats: "rippling",   tier: 1, domain: "observability",  broadFilter: true },
 
   // ── AI / ML platforms (broad filter — any senior PM role) ────
   { id: "anthropic",            ats: "greenhouse", tier: 1, domain: "platform",       broadFilter: true },
@@ -69,13 +80,23 @@ export const SOURCES = [
   // ── Observability (expanded) ──────────────────────────────────
   { id: "cribl",             ats: "greenhouse", tier: 1, domain: "observability"             },
   { id: "kentik",            ats: "greenhouse", tier: 2, domain: "observability"             },
+  { id: "chronospherejobs",  ats: "ashby",      tier: 1, domain: "observability", broadFilter: true },
+  { id: "montecarlodata",    ats: "ashby",      tier: 1, domain: "observability", broadFilter: true },
 
   // ── AI / ML platforms (expanded) ─────────────────────────────
   { id: "scaleai",           ats: "greenhouse", tier: 1, domain: "platform",  broadFilter: true },
+  { id: "pinecone",          ats: "ashby",      tier: 1, domain: "platform",  broadFilter: true },
 
   // ── Infrastructure / data platform (expanded) ─────────────────
   { id: "fastly",            ats: "greenhouse", tier: 1, domain: "infrastructure"            },
   { id: "fivetran",          ats: "greenhouse", tier: 2, domain: "platform"                  },
+  { id: "snowflakecomputing", ats: "greenhouse", tier: 1, domain: "platform"                 },
+  { id: "confluent",         ats: "ashby",      tier: 1, domain: "platform",  broadFilter: true },
+  { id: "airbyte",           ats: "greenhouse", tier: 2, domain: "platform"                  },
+
+  // ── Developer / software delivery tools (expanded) ────────────
+  { id: "retool",            ats: "greenhouse", tier: 2, domain: "devtools"                  },
+  { id: "posthog",           ats: "ashby",      tier: 2, domain: "devtools",  broadFilter: true },
 
   // ── Defense tech ─────────────────────────────────────────────
   // Note: Anduril, Palantir, Shield AI, Rebellion Defense, Skydio, Joby, Wisk, Archer,
