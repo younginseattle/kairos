@@ -38,14 +38,14 @@ export const SOURCES = [
   { id: "arizeai",              ats: "greenhouse", tier: 1, domain: "observability",  broadFilter: true },
   // Previously noted as unreachable ("Host not in allowlist") — that was this dev
   // sandbox's own outbound proxy policy blocking ashbyhq.com, not a real
-  // restriction on these companies' boards. Confirmed live via a real GitHub
-  // Actions run: fiddler-ai and Braintrust are real, reachable Ashby boards
-  // (see fetchAshbyJobs — a board with zero current postings looks identical
-  // to a broken one unless you treat null jobPostings as "no jobs").
-  // observeinc and galileo (Rippling) returned genuine HTTP 404 from that same
-  // run despite live, human-browsable pages at those URLs — their public APIs
-  // are evidently disabled even though the site itself works. Not re-added;
-  // use LinkedIn alerts for those two instead.
+  // restriction on these companies' boards. Two live GitHub Actions runs
+  // confirmed: (1) fiddler-ai and Braintrust are real, reachable Ashby boards
+  // — the actual blocker was fetchAshbyJobs reading the wrong field name
+  // (`jobPostings` vs the real `jobs`), now fixed with evidence from that
+  // run's diagnostic logging; (2) observeinc and galileo (Rippling) returned
+  // genuine HTTP 404 despite live, human-browsable pages at those URLs —
+  // their public APIs are evidently disabled even though the site itself
+  // works. Not re-added; use LinkedIn alerts for those two instead.
   { id: "fiddler-ai",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
   { id: "Braintrust",           ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
 
@@ -348,16 +348,15 @@ async function fetchAshbyJobs(companyId) {
   const res = await fetchWithTimeout(`https://api.ashbyhq.com/posting-api/job-board/${companyId}`);
   if (!res.ok) throw new Error(`Ashby fetch failed for "${companyId}" — HTTP ${res.status}`);
   const data = await res.json();
-  // Ashby appears to return jobPostings as null/absent (not []) when a real,
-  // reachable board currently has zero open postings — treat that as "no
-  // jobs" rather than a hard failure. Only genuinely unrecognized shapes
-  // (no jobPostings key at all) are treated as an error, with the actual
-  // response keys logged so a real failure is diagnosable instead of opaque.
-  if (data.jobPostings === undefined) {
-    throw new Error(`Ashby: unexpected response shape for "${companyId}" — no jobPostings field (keys: ${Object.keys(data).join(", ") || "none"})`);
+  // Confirmed via a live run's diagnostic logging (not guessed): Ashby's
+  // posting-api actually returns the array under `jobs`, with `apiVersion`
+  // alongside it — not `jobPostings` as originally assumed. Keeping the
+  // diagnostic error for any other unrecognized shape so a future mismatch
+  // is debuggable from the log instead of opaque.
+  if (!Array.isArray(data.jobs)) {
+    throw new Error(`Ashby: unexpected response shape for "${companyId}" — no jobs array (keys: ${Object.keys(data).join(", ") || "none"})`);
   }
-  if (!Array.isArray(data.jobPostings)) return [];
-  return data.jobPostings.map(job => ({
+  return data.jobs.map(job => ({
     title:       job.title,
     location:    job.locationName || null,
     url:         job.jobUrl || job.applyUrl,
