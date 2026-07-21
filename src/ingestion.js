@@ -522,22 +522,34 @@ export function normalizeJob(job) {
 // 4. DEDUPLICATION
 // ─────────────────────────────────────────────────────────────────
 
+// LinkedIn serves the same posting at both linkedin.com/jobs/view/{id}/ and
+// linkedin.com/comm/jobs/view/{id} (no trailing slash) — dedup by the
+// extracted numeric id when the URL is a LinkedIn job link, so any variant
+// matches an existing row; exact string match for everything else.
+function extractLinkedInJobId(url) {
+  const m = /linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)/.exec(url || "");
+  return m ? m[1] : null;
+}
+
 /**
  * Returns true if a job with this URL already exists in Supabase.
  * On DB error, returns false (assume not duplicate) to avoid silent drops.
  */
 export async function isDuplicateJob(supabaseClient, url) {
   if (!url) return false;
-  const { data, error } = await supabaseClient
-    .from("jobs")
-    .select("id")
-    .eq("url", url)
-    .maybeSingle();
+  const jobId = extractLinkedInJobId(url);
+  // .limit(1) + array-length check rather than .maybeSingle() — the ilike
+  // pattern (and, given pre-existing duplicate rows, even an exact match in
+  // rare cases) can match more than one row, and .maybeSingle() throws if so.
+  const query = jobId
+    ? supabaseClient.from("jobs").select("id").ilike("url", `%jobs/view/${jobId}%`)
+    : supabaseClient.from("jobs").select("id").eq("url", url);
+  const { data, error } = await query.limit(1);
   if (error) {
     logError(`Duplicate check failed for "${url}": ${error.message}`);
     return false;
   }
-  return !!data;
+  return Array.isArray(data) && data.length > 0;
 }
 
 // ─────────────────────────────────────────────────────────────────
