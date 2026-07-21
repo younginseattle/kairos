@@ -105,6 +105,13 @@ export const SOURCES = [
   // Rocket Lab, Planet, Axiom Space, Relativity Space all return "Host not in allowlist"
   // on their Greenhouse/Lever boards — public API access is disabled by those companies.
   { id: "epirus",            ats: "greenhouse", tier: 2, domain: "defense"                   },
+
+  // ── Aggregators — broaden beyond the hand-curated company list above ──
+  // `id` here is a feed identifier, not a company — company comes from each
+  // listing. Wellfound/AngelList was considered but has no public API, only
+  // third-party scrapers of its site; not added for that reason.
+  { id: "remoteok",              ats: "remoteok",       tier: 3, domain: "aggregator" },
+  { id: "remote-product-jobs",   ats: "weworkremotely", tier: 3, domain: "aggregator" },
 ];
 // ─────────────────────────────────────────────────────────────────
 // FILTER CONFIGURATION
@@ -308,10 +315,10 @@ function logError(msg) { console.error(`[ingestion] ERROR: ${msg}`); }
 // 1. JOB FETCHERS
 // ─────────────────────────────────────────────────────────────────
 
-function fetchWithTimeout(url, timeoutMs = 10000) {
+function fetchWithTimeout(url, { timeoutMs = 10000, headers } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+  return fetch(url, { signal: controller.signal, headers }).finally(() => clearTimeout(timer));
 }
 
 async function fetchGreenhouseJobs(companyId) {
@@ -382,6 +389,56 @@ async function fetchRipplingJobs(companyId) {
   }));
 }
 
+// ── Aggregators ──────────────────────────────────────────────────
+// Unlike the ATS fetchers above, one request here returns jobs from many
+// different companies — so `company` is read per-listing from the job data
+// itself, not defaulted to the source id (which is just a feed identifier).
+
+async function fetchRemoteOkJobs() {
+  const res = await fetchWithTimeout("https://remoteok.com/api", {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; KairosJobBot/1.0)" },
+  });
+  if (!res.ok) throw new Error(`RemoteOK fetch failed — HTTP ${res.status}`);
+  const data = await res.json();
+  if (!Array.isArray(data)) throw new Error("RemoteOK: unexpected response — not an array");
+  // The first element is a legal/metadata notice, not a job posting.
+  return data.slice(1).map(job => ({
+    title:       job.position,
+    location:    job.location || "Remote",
+    url:         job.apply_url || job.url,
+    description: job.description || "",
+    company:     job.company || "",
+    source:      "remoteok",
+  }));
+}
+
+async function fetchWeWorkRemotelyJobs(feedSlug) {
+  const res = await fetchWithTimeout(`https://weworkremotely.com/categories/${feedSlug}.rss`);
+  if (!res.ok) throw new Error(`WeWorkRemotely fetch failed for "${feedSlug}" — HTTP ${res.status}`);
+  const xml = await res.text();
+  const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+  return items.map(item => {
+    const rawTitle    = extractXmlField(item, "title");
+    const link        = extractXmlField(item, "link");
+    const description = extractXmlField(item, "description");
+    // WWR's RSS convention: title is rendered as "Company: Job Title".
+    const colonIndex = rawTitle.indexOf(":");
+    const company = colonIndex > -1 ? rawTitle.slice(0, colonIndex).trim() : "";
+    const title   = colonIndex > -1 ? rawTitle.slice(colonIndex + 1).trim() : rawTitle;
+    return { title, company, location: "Remote", url: link, description, source: "weworkremotely" };
+  });
+}
+
+function extractXmlField(block, tag) {
+  const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(block);
+  if (!m) return "";
+  return m[1]
+    .replace(/^\s*<!\[CDATA\[/, "").replace(/\]\]>\s*$/, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .trim();
+}
+
 /**
  * Dispatches to the correct fetcher.
  * Failures are isolated — one bad source never blocks the rest.
@@ -389,11 +446,14 @@ async function fetchRipplingJobs(companyId) {
 async function fetchJobsFromSource({ id, ats }) {
   try {
     log(`Fetching ${ats} → ${id}…`);
-    const jobs =
-      ats === "greenhouse" ? await fetchGreenhouseJobs(id) :
-      ats === "lever"      ? await fetchLeverJobs(id)      :
-      ats === "ashby"      ? await fetchAshbyJobs(id)      :
-                             await fetchRipplingJobs(id);
+    let jobs;
+    if      (ats === "greenhouse")     jobs = await fetchGreenhouseJobs(id);
+    else if (ats === "lever")          jobs = await fetchLeverJobs(id);
+    else if (ats === "ashby")          jobs = await fetchAshbyJobs(id);
+    else if (ats === "rippling")       jobs = await fetchRipplingJobs(id);
+    else if (ats === "remoteok")       jobs = await fetchRemoteOkJobs();
+    else if (ats === "weworkremotely") jobs = await fetchWeWorkRemotelyJobs(id);
+    else throw new Error(`Unknown ats type "${ats}"`);
     log(`  ✓ ${jobs.length} jobs from ${id}`);
     return jobs;
   } catch (err) {
