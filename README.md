@@ -8,7 +8,7 @@ Kairos is a personal job search intelligence tool built for senior Product leade
 
 ## What It Does
 
-**Discover** — Automatically pulls new PM roles from Greenhouse and Lever ATS boards at 45+ target companies (Datadog, Elastic, Grafana, Anthropic, etc.), filters for Director/VP/Staff/Group/Principal PM titles, deduplicates, and stores them in Supabase. Also ingests LinkedIn and Google Careers job alert emails from Gmail automatically.
+**Discover** — Automatically pulls new PM roles from Greenhouse and Ashby ATS boards across 38 target companies (Datadog, Elastic, Grafana, Anthropic, Confluent, Pinecone, etc.), plus RemoteOK and We Work Remotely aggregator feeds for companies outside the hand-curated list — filters for Director/VP/Staff/Group/Principal PM titles, deduplicates, and stores them in Supabase. Also ingests LinkedIn job alert emails from Gmail (parsed from each email's HTML structure, with a plaintext fallback) and Google Careers job alert emails, automatically.
 
 **Evaluate** — Paste any job description and Claude scores it across 8 dimensions: overall fit, skills match, experience match, culture, compensation, work/life balance, growth, and location. Outputs a structured verdict with strengths, gaps, and a recommendation (`apply` / `apply_with_note` / `stretch` / `skip`).
 
@@ -27,8 +27,8 @@ Kairos is a personal job search intelligence tool built for senior Product leade
 | Frontend | React 19 + Vite |
 | Database | Supabase (PostgreSQL) |
 | AI | Anthropic Claude (`claude-sonnet-4-20250514`) |
-| Job sources | Greenhouse API, Lever API, Gmail (LinkedIn + Google Careers alerts) |
-| Automation | GitHub Actions (3 pipelines), Node.js scripts |
+| Job sources | Greenhouse + Ashby APIs, RemoteOK + We Work Remotely aggregators, Gmail (LinkedIn alerts, HTML-parsed), Google Careers email scan |
+| Automation | GitHub Actions (4 pipelines), Node.js scripts |
 
 ---
 
@@ -44,14 +44,16 @@ kairos/
 │   ├── supabaseClient.js    # Supabase client init
 │   └── main.jsx             # React entry point
 ├── scripts/
-│   ├── fetch-jobs.js        # Gmail alert fetcher — LinkedIn + Google alerts (GitHub Actions)
-│   ├── scan-google-jobs.mjs # Google Careers email scanner (GitHub Actions)
-│   ├── get-gmail-token.js   # One-time OAuth helper to get Gmail refresh token
-│   └── package.json         # Script dependencies
+│   ├── fetch-jobs.js          # Gmail alert fetcher — LinkedIn alerts, HTML-parsed via cheerio (GitHub Actions)
+│   ├── scan-google-jobs.mjs   # Google Careers email scanner (GitHub Actions)
+│   ├── check-linkedin-jobs.mjs # Marks pipeline jobs closed once the LinkedIn posting expires (GitHub Actions)
+│   ├── get-gmail-token.js     # One-time OAuth helper to get Gmail refresh token
+│   └── package.json           # Script dependencies
 ├── .github/workflows/
-│   ├── Discover_Jobs.yml      # ATS ingestion twice daily (6am + 6pm UTC)
-│   ├── fetch-jobs.yml         # LinkedIn/Google Gmail alerts every 6 hours
-│   └── scan-google-jobs.yml   # Google Careers emails Mon + Thu at 9am UTC
+│   ├── Discover_Jobs.yml      # ATS + aggregator ingestion twice daily (6am + 6pm UTC)
+│   ├── fetch-jobs.yml         # LinkedIn Gmail alerts every 6 hours
+│   ├── scan-google-jobs.yml   # Google Careers emails Mon + Thu at 9am UTC
+│   └── check-linkedin-jobs.yml # Daily check for closed/expired LinkedIn postings
 ├── public/
 │   └── autoeval.html        # Standalone auto-evaluator (no scraping required)
 ├── index.html
@@ -111,26 +113,35 @@ The app runs at `http://localhost:5173`.
 
 ## GitHub Actions Automation
 
-Three pipelines run automatically — no manual steps required after initial setup.
+Four pipelines run automatically — no manual steps required after initial setup.
 
 ### Discover Jobs (`Discover_Jobs.yml`)
-Runs the full ATS ingestion pipeline twice daily (6am and 6pm UTC). Fetches jobs from all 45+ Greenhouse and Lever sources, filters for relevant roles, auto-scores with Claude, and inserts new ones into Supabase. Roles scoring below 55 are automatically passed.
+Runs the full ATS ingestion pipeline twice daily (6am and 6pm UTC). Fetches jobs from all 40 sources — 31 Greenhouse companies, 7 Ashby companies, and 2 aggregator feeds (RemoteOK, We Work Remotely) — filters for relevant roles, auto-scores with Claude, and inserts new ones into Supabase. Roles scoring below 55 are automatically passed.
+
+Lever and Rippling fetchers exist in `ingestion.js` but currently have zero active sources: Lever was never populated, and the one Rippling candidate (Galileo) returned a 404 from its public API despite a live, browsable careers page — dropped rather than guessed a third time. See the comments in `SOURCES` for the specific companies that were tried and rejected (public API disabled server-side) versus never attempted.
 
 **Required GitHub secrets:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`
 
-### Fetch Gmail Alerts (`fetch-jobs.yml`)
-Runs every 6 hours. Reads LinkedIn and Google job alert emails from Gmail using native OAuth (no external libraries), parses job listings, filters out aggregator sites (The Ladders, ZipRecruiter, etc.) and non-US roles, deduplicates against Supabase, and inserts new roles with `source: linkedin_alert`.
+### Fetch LinkedIn Alerts (`fetch-jobs.yml`)
+Runs every 6 hours. Reads LinkedIn job alert emails from Gmail using native OAuth (no `googleapis` dependency), and parses each job card from the email's **HTML** structure via `cheerio` — anchoring on real DOM boundaries (logo image + title link per card) instead of guessing field order from plaintext line position. Falls back to the old plaintext heuristic only if an email has no HTML part, or HTML parsing finds zero cards. Filters out aggregator sites (The Ladders, ZipRecruiter, etc.) and non-US roles, deduplicates against Supabase, and inserts new roles with `source: linkedin_alert`.
 
-Supports manual backfill via `workflow_dispatch` with a configurable `hours` lookback window.
+Supports manual backfill via `workflow_dispatch` with a configurable `hours` lookback window, and a `verbose` flag that logs every parsed job and filter decision.
 
 **Required GitHub secrets:** `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 
 ### Scan Google Careers (`scan-google-jobs.yml`)
-Runs every Monday and Thursday at 9am UTC. Reads Google Careers job alert emails directly, parses listings, filters for Director/VP/Staff/Group/Principal PM titles in US locations, and inserts matched roles with `source: google_alert`.
+Runs every Monday and Thursday at 9am UTC. Reads Google Careers job alert emails directly, parses listings, filters for Director/VP/Staff/Group/Principal PM titles in US locations, and inserts matched roles with `source: google_alert`. This is a separate mechanism from LinkedIn alert parsing above — it targets Google's own job postings specifically, since Google uses Workday and isn't reachable via the Greenhouse/Ashby APIs.
 
 Supports `--dry-run` and `--days=N` options via `workflow_dispatch`.
 
 **Required GitHub secrets:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+
+### Check LinkedIn Job Status (`check-linkedin-jobs.yml`)
+Runs daily at 8am UTC, after the overnight `Discover Jobs` run. Checks every active LinkedIn-sourced job in the pipeline against its live posting and marks it `closed` in Supabase once the listing has expired or been taken down, so the pipeline view doesn't accumulate dead postings.
+
+Supports a `dry_run` flag via `workflow_dispatch` to report findings without writing to Supabase.
+
+**Required GitHub secrets:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 
 To generate OAuth tokens for Gmail/Google Careers:
 ```bash
@@ -199,15 +210,23 @@ Paste a JSON job list from the daily Claude briefing directly into the app. Uses
 
 ## Target Companies
 
-Kairos covers 45+ companies across three domains:
+Kairos covers 38 named companies across five domains, plus 2 aggregator feeds that pull from companies outside this list entirely.
 
-**Observability / Monitoring** — Datadog, Elastic, New Relic, PagerDuty, Grafana Labs, Honeycomb, Sumo Logic, Cribl, Kentik, Arize AI, Fiddler AI, Observe Inc, Galileo AI, Braintrust
+**Observability / Monitoring** — Datadog, Elastic, New Relic, PagerDuty, Grafana Labs, Honeycomb, Sumo Logic, Cribl, Kentik, Arize AI, Fiddler AI, Braintrust, Chronosphere, Monte Carlo Data
 
-**AI / ML Platforms** — Anthropic, Databricks, Glean, Scale AI
+**AI / ML / Data Platforms** — Anthropic, Databricks, Glean, Scale AI, Pinecone, Confluent, Temporal, dbt Labs, MongoDB, Stripe, Smartsheet, Fivetran, LaunchDarkly, Twilio
 
-**Infrastructure / Cloud / DevTools** — Cloudflare, CoreWeave, Temporal, LaunchDarkly, Vercel, Postman, dbt Labs, Harness, Fastly, Fivetran, Twilio, MongoDB, Stripe, GitLab, Smartsheet, Samsara, Epirus
+**Infrastructure / Cloud** — Cloudflare, CoreWeave, Samsara, Fastly
 
-> FAANG companies (Google, Apple, Microsoft, Amazon, Meta) use proprietary ATS systems not accessible via Greenhouse/Lever. LinkedIn and Google Careers alerts are captured via Gmail ingestion. Use the **Search Plan** tab in the app to surface manual search targets.
+**Developer Tools** — Vercel, Postman, Harness, GitLab, PostHog
+
+**Defense Tech** — Epirus
+
+**Aggregators** — RemoteOK, We Work Remotely (product-category feed) — these return jobs from many companies per fetch, not one, so they're the mechanism for reaching beyond the hand-curated list above.
+
+> FAANG companies (Google, Apple, Microsoft, Amazon, Meta) use proprietary ATS systems not accessible via Greenhouse/Ashby. LinkedIn and Google Careers alerts are captured via Gmail ingestion. Use the **Search Plan** tab in the app to surface manual search targets.
+>
+> Several companies were tried and dropped after their public APIs returned errors from a live production run despite having real, browsable careers pages: Observe Inc and Galileo AI (public API access disabled server-side), Snowflake, Airbyte, and Retool (same). Wellfound/AngelList has no public API at all — only third-party site scrapers — and was deliberately not integrated for that reason. All of these remain reachable via LinkedIn alert emails.
 
 ---
 
