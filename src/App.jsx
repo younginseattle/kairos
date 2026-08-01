@@ -1,5 +1,7 @@
 import { Fragment, useState, useEffect } from "react";
 import { supabase } from './supabaseClient'
+import { computeFit, scoreBand } from "./scoring.js";
+import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
 import { runJobIngestion, SOURCES, isRelevantJob } from './ingestion.js'
 import NetworkView from './NetworkView.jsx'
 
@@ -251,6 +253,42 @@ function enrichJob(job) {
   const mk = job.missing_keywords || [], sg = job.strategic_gaps || [], jd = job.jd_text || "";
   // Classify location — use job.location, falling back to location_score hints
   const locClassification = classifyLocation(job.location || "", jd);
+
+  // v2 path: fit_score already accounts for gaps, gates, location posture and the
+  // two-stretch multiplier. Applying the legacy client-side penalties on top would
+  // double-count them, so the v2 score is used as-is.
+  if (job.fit_score != null) {
+    const detail = job.fit_detail || {};
+    const cf = (job.fit_confidence ?? 50) / 100;
+    const pursuit =
+      job.fit_score >= 85 ? "PRIORITY" :
+      job.fit_score >= 70 ? "STRONG"   :
+      job.fit_score >= 50 ? "SELECTIVE" : "PASS";
+    return {
+      ...job,
+      confidence: cf,
+      final_score: job.fit_score,
+      _base: job.fit_score,
+      _penalty: detail.math?.gap_penalty ?? 0,
+      _confidence_pct: job.fit_confidence ?? 50,
+      _stretch_penalty: 0,
+      _location_penalty: 0,
+      _capped: (detail.gates || []).length > 0,
+      _v2: true,
+      _subscores: detail.subscores || null,
+      _explanations: detail.explanations || null,
+      _gates: detail.gates || [],
+      _gaps: detail.gaps || null,
+      _math: detail.math || null,
+      _confidence_reasons: detail.confidence_reasons || [],
+      _stretch: calculateStretchFactor({ ...job, missing_keywords: mk, strategic_gaps: sg }),
+      _pursuit: pursuit,
+      _time_strategy: getTimeStrategy(pursuit),
+      _location_tier: locClassification.tier,
+      _location_label: locClassification.label,
+    };
+  }
+
   const scoring = calculateFinalScore({
     overall_score:        job.overall_score ?? job.score ?? null,
     skills_match:         job.skills_match,
@@ -321,75 +359,11 @@ const REC_CONFIG = {
 // CLAUDE PROMPTS
 // ─────────────────────────────────────────────────────────────────
 
-const FIT_PROMPT = `You are a PM recruiting specialist evaluating VP/Director-level Product candidates. The candidate is a Product Manager, not an engineer. Return ONLY raw JSON — no markdown, no explanation.
+// FIT_PROMPT now lives in fitPrompt.js as a single source of truth.
+// It previously existed here AND in ingestion.js with a "keep in sync" comment,
+// and the two copies had already drifted apart — the same job could score
+// differently depending on whether it came through the pipeline or this tab.
 
-Schema:
-{
-  "overall_score": integer 0-100, "confidence": number 0-100,
-  "skills_match": integer 0-100, "experience_match": integer 0-100, "culture_match": integer 0-100,
-  "compensation_score": integer 0-100, "work_life_balance_score": integer 0-100,
-  "growth_score": integer 0-100, "location_score": integer 0-100, "company_score": integer 0-100,
-  "strengths": [up to 4 short strings], "gaps": [up to 3 short strings], "quick_wins": [up to 3 short strings],
-  "missing_keywords": [important JD keywords not in resume, up to 8],
-  "strategic_gaps": [real gaps that could weaken candidacy, up to 4],
-  "verdict": "2-3 sentence honest assessment",
-  "recommendation": "apply" | "apply_with_note" | "stretch" | "skip",
-  "score_explanation": { "key_factor": "string", "strengths": [2-3 strings], "weaknesses": [1-2 strings] },
-  "top_candidate_signal": { "level": "HIGH | MEDIUM | LOW", "reason": "1 sentence" }
-}
-
-HOW TO SCORE experience_match (this dimension is about PM career fit, not engineering credentials):
-  - 75-90: 10+ years PM at this seniority level, domain is a direct match (same vertical, same problems)
-  - 60-75: 10+ years PM at this seniority level, adjacent domain (transferable mental models)
-  - 50-60: Right seniority but domain requires a learning curve; or domain is strong but slightly below target seniority
-  - 40-50: Meaningful gap in either seniority OR domain, but the candidate can credibly make the case
-  - Below 40: Reserved for roles where the candidate has never operated near this level, OR where the title is actually an engineering role (VP Engineering, CTO, Principal Engineer) disguised with product language
-  CRITICAL: JD requirements for "engineering leadership", "hands-on Slurm/Kubernetes/InfiniBand/RDMA expertise", or "research lab background" are NOT factors in experience_match for a VP/Director Product title. Those are tools the product leader must understand, not operate.
-
-HOW TO SCORE skills_match (this dimension is about PM skills, not technical tool mastery):
-  - 70-85: Product strategy, roadmapping, cross-functional leadership, and domain knowledge all strongly align
-  - 55-70: Strong PM toolkit, domain knowledge requires ramp
-  - 45-55: PM skills are solid, notable domain knowledge gaps
-  - Below 45: Reserved for roles requiring skills the candidate demonstrably lacks (e.g., hardware PM, consumer gaming, healthcare compliance-heavy)
-  CRITICAL: skills_match is NOT reduced because the candidate can't personally operate Slurm, InfiniBand, RDMA, or run GPU clusters. Technical depth to partner with and influence engineering is what matters.
-
-ROLE CLASSIFICATION — apply before scoring:
-  - If title contains VP/Director/Head of/Group PM/Staff PM/Principal PM → Product leadership role, use PM scoring framework above
-  - If title is VP Engineering / CTO / Principal Engineer / Director of Engineering with no "Product" → engineering role, penalize appropriately for PM candidate
-  - Vague/minimal JD (under 200 words, no real requirements) → confidence below 50, score below 60
-
-OVERALL SCORE GUIDANCE:
-  - 78-90: VP/Director PM in exact target domain, remote-friendly, tier-1 company, strong domain alignment
-  - 65-78: VP/Director PM at tier-1 target company in target domain even with bridgeable gaps (engineering depth requirements, HPC-specific tooling, location uncertainty). This is the correct band for CoreWeave/Anthropic/Datadog VP Product roles where candidate has right background but some gaps.
-  - 55-65: VP/Director PM in adjacent domain with location friction, or strong domain + meaningful seniority mismatch
-  - 45-55: Right level, wrong domain, or meaningful seniority gap
-  - Below 45: Wrong level, wrong function (engineering not product), or outside all target domains
-  The overall_score must be consistent with experience_match and skills_match. A PM candidate cannot score below 55 at a tier-1 target company on a VP/Director Product title in the target domain.
-
-CALIBRATION EXAMPLES — use these as anchors:
-  1. "VP, Product AI/ML" at CoreWeave (AI cloud infra, tier-1 target). JD lists HPC/Slurm/InfiniBand depth and "engineering leadership" as requirements. No explicit remote signal. Candidate: 10+ yr VP-level PM, strong platform/infra/distributed-systems background, no hands-on HPC ops.
-     → experience_match: 68, skills_match: 65, location_score: 40, company_score: 90, compensation_score: 95, work_life_balance_score: 58, overall: 68, recommendation: apply_with_note
-     Rationale: right seniority, tier-1 target company, exact target domain. "Engineering leadership" in a VP Product JD = technical depth and influence ability, not hands-on ops. Real gaps are HPC tooling and location ambiguity — not disqualifying. This is a strong target role worth applying to with a tailored narrative.
-
-  2. "Director of Product Management" at Datadog (observability platform, remote-friendly). Candidate: platform PM, distributed systems experience.
-     → experience_match: 80, skills_match: 78, location_score: 97, company_score: 90, overall: 80, recommendation: apply
-
-  3. "Director of Product" at mid-size B2B SaaS (HR software, no platform angle). Candidate: strong PM, wrong domain.
-     → experience_match: 55, skills_match: 58, overall: 52, recommendation: apply_with_note
-
-  4. "VP of Engineering" (pure engineering management, no Product in title). Candidate: is a PM.
-     → experience_match: 22, skills_match: 28, overall: 26, recommendation: skip
-
-  5. "Senior Product Manager" (IC individual contributor role, not leadership). Candidate: is a VP/Director-level PM.
-     → experience_match: 65, skills_match: 70, overall: 58, recommendation: apply_with_note (overqualified)
-
-TARGET COMPANIES (company_score 80-95): CoreWeave, Anthropic, Databricks, Grafana Labs, Datadog, Elastic, New Relic, Cloudflare, Temporal, LaunchDarkly, PagerDuty, Honeycomb, Sumo Logic, Cribl, Scale AI, Glean, Stripe, GitLab, MongoDB
-
-LOCATION (candidate: Seattle, no relocation). The LOCATION field in the message is authoritative — if it says "Remote", "remote", or any remote variant, use location_score 95-100 without further analysis. If LOCATION is blank or "Not specified", scan the full JD body for remote signals ("remote", "remotely", "remote option", "remote eligible", "work remotely") — if found, treat as remote. Score: Remote=95-100, Seattle/WA=90-95, Hybrid Seattle=80-85, Hybrid other city=60-75, In-office non-Seattle=40-60, Requires relocation=10-30.
-
-work_life_balance_score: 85-100=remote-first, explicit flexibility, generous PTO, established company; 70-84=hybrid with flexibility, no on-call signals, public/stable company; 50-69=high-growth startup, "fast-paced"/"high-velocity" language, implicit intensity; 30-49=on-call, "always-on", early-stage, 24/7 signals.
-
-compensation_score: Base $250K+=90-100, $200-250K=80-90, $160-200K=70-80, $130-160K=55-70, below $130K or unspecified=40-60.`;
 
 // Updated Search Plan prompt — explicitly surfaces FAANG career pages
 // since those companies are inaccessible via Greenhouse/Lever APIs
@@ -672,7 +646,40 @@ async function callClaude({ apiKey, system, userMessage, maxTokens = 1500 }) {
 }
 
 async function generateSearchPlan({ apiKey, profile }) { return callClaude({ apiKey, system: SEARCH_PLAN_PROMPT, userMessage: `CANDIDATE PROFILE:\n${profile}`, maxTokens: 2500 }); }
-async function runEvaluation({ apiKey, jd, profile, location }) { return callClaude({ apiKey, system: FIT_PROMPT, userMessage: `JOB DESCRIPTION:\n${jd}\n\nLOCATION: ${location || "Not specified"}\n\nCANDIDATE PROFILE:\n${profile}`, maxTokens: 1500 }); }
+/**
+ * Evaluate a JD. Claude extracts structured evidence; scoring.js computes the
+ * number. Returns a legacy-shaped object so existing callers keep working,
+ * with the full v2 detail attached as `.fit`.
+ */
+async function runEvaluation({ apiKey, jd, profile, location, title = "", company = "" }) {
+  const extraction = await callClaude({
+    apiKey,
+    system: FIT_EXTRACTION_PROMPT,
+    userMessage: buildFitUserMessage({ title, company, location, jd }),
+    maxTokens: 1500,
+  });
+  const fit = computeFit(extractionToSignals(extraction, { company, jd }));
+  return {
+    ...extraction,
+    fit,
+    overall_score: fit.score,
+    confidence:    fit.confidence,
+    recommendation:
+      fit.band.key === "apply_now"  ? "apply" :
+      fit.band.key === "apply_if"   ? "apply_with_note" :
+      fit.band.key === "warm_intro" ? "stretch" : "skip",
+    skills_match:            fit.subscores.non_interchangeability,
+    experience_match:        fit.subscores.level,
+    culture_match:           fit.subscores.burden,
+    compensation_score:      fit.subscores.compensation,
+    location_score:          fit.subscores.burden,
+    company_score:           fit.subscores.domain,
+    work_life_balance_score: fit.subscores.burden,
+    growth_score:            fit.subscores.domain,
+    missing_keywords: (extraction.known_gaps || []).map(g => g.gap),
+    strategic_gaps:   (extraction.known_gaps || []).filter(g => g.level === "required").map(g => g.why || g.gap),
+  };
+}
 async function tailorResume({ apiKey, resume, jd, profile }) { return callClaude({ apiKey, system: TAILOR_PROMPT, userMessage: `JOB DESCRIPTION:\n${jd}\n\nMASTER RESUME:\n${resume}\n\nCANDIDATE PROFILE:\n${profile}`, maxTokens: 6000 }); }
 
 
@@ -852,7 +859,17 @@ function ScoreWarnings({ job, jd_text = "" }) {
 
 function ScoreMeta({ enriched }) {
   if (!enriched) return null;
-  const { _base, _confidence_pct, _penalty, _stretch_penalty, _location_penalty, _capped } = enriched;
+  const { _base, _confidence_pct, _penalty, _stretch_penalty, _location_penalty, _capped, _v2, _gates } = enriched;
+  if (_v2) {
+    const lowConf = _confidence_pct < 55;
+    return (
+      <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, lineHeight: 1.8, textAlign: "right" }}>
+        <span style={{ color: lowConf ? T.amber : T.textMuted }}>conf {_confidence_pct}%</span>
+        {_penalty > 0 && <><span style={{ margin: "0 4px", color: T.borderFaint }}>·</span><span style={{ color: T.red }}>gaps −{_penalty}</span></>}
+        {(_gates || []).length > 0 && <><span style={{ margin: "0 4px", color: T.borderFaint }}>·</span><span style={{ color: T.red }}>{_gates.length} gate{_gates.length > 1 ? "s" : ""}</span></>}
+      </div>
+    );
+  }
   return (
     <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, lineHeight: 1.8, textAlign: "right" }}>
       <span>raw {_base}</span><span style={{ margin: "0 4px", color: T.borderFaint }}>·</span><span>conf {_confidence_pct}%</span>
@@ -860,6 +877,101 @@ function ScoreMeta({ enriched }) {
       {_stretch_penalty > 0 && <><span style={{ margin: "0 4px", color: T.borderFaint }}>·</span><span style={{ color: T.amber }}>stretch −{Math.round(_stretch_penalty)}</span></>}
       {_location_penalty > 0 && <><span style={{ margin: "0 4px", color: T.borderFaint }}>·</span><span style={{ color: T.amber }}>location −{_location_penalty}</span></>}
       {_capped && <><span style={{ margin: "0 4px", color: T.borderFaint }}>·</span><span style={{ color: T.red }}>capped</span></>}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// FIT BREAKDOWN (v2)
+// The old score was a single unfalsifiable number, which is why it stopped
+// being trusted. This shows every dimension, its weight, the gates that
+// capped the total, and the confidence with the reasons behind it.
+// ─────────────────────────────────────────────────────────────────
+const FIT_DIMS = [
+  { key: "domain",                label: "Domain proximity",     weight: "30%" },
+  { key: "level",                 label: "Level fit",            weight: "25%" },
+  { key: "non_interchangeability",label: "Non-interchangeable",  weight: "20%" },
+  { key: "compensation",          label: "Compensation",         weight: "15%" },
+  { key: "burden",                label: "Process / life",       weight: "10%" },
+];
+
+function FitBreakdown({ job }) {
+  if (!job?._v2 || !job._subscores) return null;
+  const { _subscores, _explanations, _gates, _gaps, _math, _confidence_pct, _confidence_reasons } = job;
+  const barColor = v => v == null ? T.borderFaint : v >= 80 ? T.green : v >= 60 ? T.blue : v >= 40 ? T.amber : T.red;
+
+  return (
+    <div style={{ marginTop: 12, padding: 12, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6 }}>
+      <div style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted, marginBottom: 10, letterSpacing: 0.5 }}>
+        FIT BREAKDOWN
+      </div>
+
+      {FIT_DIMS.map(d => {
+        const v = _subscores[d.key];
+        return (
+          <div key={d.key} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: 11, color: T.text }}>{d.label}</span>
+              <span style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted }}>
+                {d.weight} · {v == null ? "excluded" : v}
+              </span>
+            </div>
+            <div style={{ height: 3, background: T.borderFaint, borderRadius: 2, marginTop: 3, overflow: "hidden" }}>
+              <div style={{ width: `${v ?? 0}%`, height: "100%", background: barColor(v) }} />
+            </div>
+            {_explanations?.[d.key] && (
+              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3, lineHeight: 1.5 }}>
+                {_explanations[d.key]}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {_math?.two_stretch_multiplier != null && _math.two_stretch_multiplier < 1 && (
+        <div style={{ marginTop: 10, padding: 8, background: T.amberBg, border: `1px solid ${T.amberBorder}`, borderRadius: 4 }}>
+          <div style={{ fontSize: 10, color: T.amber, lineHeight: 1.5 }}>
+            <strong>Two-stretch penalty ×{_math.two_stretch_multiplier}</strong> — this role is a stretch on
+            domain <em>and</em> level simultaneously, so the risks compound.
+          </div>
+        </div>
+      )}
+
+      {(_gaps?.applied || []).length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted, marginBottom: 4 }}>KNOWN GAPS</div>
+          {_gaps.applied.map((g, i) => (
+            <div key={i} style={{ fontSize: 10, color: T.textMuted, lineHeight: 1.6 }}>
+              <span style={{ color: T.red }}>−{g.penalty}</span> {g.label} <span style={{ color: T.borderFaint }}>({g.level})</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(_gates || []).length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted, marginBottom: 4 }}>GATES APPLIED (ceilings)</div>
+          {_gates.map((g, i) => (
+            <div key={i} style={{ fontSize: 10, color: T.red, lineHeight: 1.6 }}>
+              ceiling {g.ceiling} — {g.reason}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${T.borderFaint}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <span style={{ fontSize: 11, color: T.text }}>Confidence</span>
+          <span style={{ fontFamily: T.fontMono, fontSize: 11, color: _confidence_pct < 55 ? T.amber : T.green }}>
+            {_confidence_pct}%
+          </span>
+        </div>
+        {(_confidence_reasons || []).length > 0 && (
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3, lineHeight: 1.5 }}>
+            {_confidence_reasons.join(" · ")}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -893,6 +1005,10 @@ function LocationBadge({ job }) {
 }
 
 function ScoreBreakdown({ job }) {
+  // v2-scored jobs get the real dimension breakdown instead of the legacy
+  // proxy bars, which were remapped subscores and no longer mean what they say.
+  if (job?._v2) return <FitBreakdown job={job} />;
+
   const fields = [{ label: "Compensation", key: "compensation_score" }, { label: "Work/Life", key: "work_life_balance_score" }, { label: "Growth", key: "growth_score" }, { label: "Location", key: "location_score" }, { label: "Company", key: "company_score" }, { label: "Confidence", key: "confidence_score" }];
   if (!fields.some(f => job[f.key] != null)) return null;
   return (
@@ -1833,32 +1949,16 @@ async function doQuickScore(job) {
       const job = jobs[i];
       setReEvalProgress({ current: i + 1, total: jobs.length, label: `${job.title} · ${job.company || ""}` });
 
-      const jdText = [job.title, job.company, job.location, job.description].filter(Boolean).join("\n");
-
       try {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": anthropicKey.trim(),
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1500,
-            system: FIT_PROMPT,
-            messages: [{ role: "user", content: `JOB DESCRIPTION:\n${jdText}\n\nLOCATION: ${job.location || "Not specified"}\n\nCANDIDATE PROFILE:\n${profile}` }],
-          }),
+        const ev = await runEvaluation({
+          apiKey: anthropicKey,
+          jd: job.description || "",
+          profile,
+          location: job.location,
+          title: job.title,
+          company: job.company,
         });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = await res.json();
-        if (payload.error) throw new Error(payload.error.message);
-
-        const raw = payload.content.map(b => b.text || "").join("").trim()
-          .replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/, "").trim();
-        const ev = JSON.parse(raw);
+        const fit = ev.fit;
 
         const { error: updateError } = await supabase.from('jobs').update({
           score:                   ev.overall_score,
@@ -1876,6 +1976,14 @@ async function doQuickScore(job) {
           location_score:          ev.location_score,
           company_score:           ev.company_score,
           confidence_score:        ev.confidence,
+          fit_score:               fit.score,
+          fit_confidence:          fit.confidence,
+          fit_model_version:       fit.model_version,
+          fit_detail: {
+            subscores: fit.subscores, explanations: fit.explanations,
+            gates: fit.gates, gaps: fit.gaps, math: fit.math, band: fit.band,
+            confidence_reasons: fit.confidence_reasons,
+          },
         }).eq('id', job.id);
 
         if (updateError) throw new Error(updateError.message);
@@ -1891,6 +1999,13 @@ async function doQuickScore(job) {
           work_life_balance_score: ev.work_life_balance_score,
           growth_score: ev.growth_score, location_score: ev.location_score,
           company_score: ev.company_score, confidence_score: ev.confidence,
+          fit_score: fit.score, fit_confidence: fit.confidence,
+          fit_model_version: fit.model_version,
+          fit_detail: {
+            subscores: fit.subscores, explanations: fit.explanations,
+            gates: fit.gates, gaps: fit.gaps, math: fit.math, band: fit.band,
+            confidence_reasons: fit.confidence_reasons,
+          },
         } : j));
 
         succeeded++;
