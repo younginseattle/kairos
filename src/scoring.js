@@ -335,7 +335,7 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
 // CONFIDENCE — driven by how much was actually parseable
 // ─────────────────────────────────────────────────────────────────
 
-export function computeConfidence({ jdChars = 0, companyKnown, compStated, dimsAvailable, dimsTotal }) {
+export function computeConfidence({ jdChars = 0, companyKnown, compStated, dimsAvailable, dimsTotal, missingCritical = [] }) {
   let c = 40;
   const reasons = [];
 
@@ -359,6 +359,17 @@ export function computeConfidence({ jdChars = 0, companyKnown, compStated, dimsA
   const coverage = dimsAvailable / dimsTotal;
   c += Math.round((coverage - 1) * 25);
   if (coverage < 1) reasons.push(`${dimsTotal - dimsAvailable} of ${dimsTotal} dimensions unavailable`);
+
+  // Domain and level carry 55% of the weight between them. If either failed to
+  // resolve — a malformed extraction, an unrecognised enum — the remaining
+  // dimensions renormalise and can still yield a plausible-LOOKING number.
+  // Observed: a garbage extraction scored 43 at 57% confidence, which reads as
+  // a confident "skip" when nothing is actually known. Cap hard so the output
+  // is visibly untrustworthy instead of quietly wrong.
+  if (missingCritical.length) {
+    ceiling = Math.min(ceiling, 25);
+    reasons.push(`${missingCritical.join(" and ")} could not be determined — score is not trustworthy`);
+  }
 
   return { confidence: Math.max(5, Math.min(ceiling, Math.round(c))), reasons };
 }
@@ -442,12 +453,17 @@ export function computeFit(signals) {
   }
   const score = Math.max(0, Math.min(Math.round(capped), ceiling));
 
+  const missingCritical = [];
+  if (d.score == null) missingCritical.push("domain proximity");
+  if (l.score == null) missingCritical.push("level fit");
+
   const { confidence, reasons } = computeConfidence({
     jdChars,
     companyKnown: facts != null,
     compStated,
     dimsAvailable: available.length,
     dimsTotal: dims.length,
+    missingCritical,
   });
 
   return {
