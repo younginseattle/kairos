@@ -1,0 +1,154 @@
+/**
+ * ═══════════════════════════════════════════════════════════════
+ * FIT EXTRACTION PROMPT (single source of truth)
+ *
+ * Previously this prompt lived in TWO places — ingestion.js and App.jsx —
+ * with a "keep in sync" comment. They had already drifted apart (App.jsx
+ * gained a 5th calibration anchor and expanded prose that ingestion.js never
+ * got), which meant a job scored via the Evaluate tab and the same job scored
+ * via the pipeline could get different numbers. One module, imported by both.
+ *
+ * CRITICAL DESIGN POINT
+ * This prompt does NOT ask the model for a fit score. The previous version
+ * asked for `overall_score` 0-100 against a prose rubric, and 33% of the entire
+ * pipeline came back as the single value 72. Open-ended LLM scoring regresses
+ * hard to the middle of whatever band the rubric describes.
+ *
+ * Instead the model EXTRACTS structured evidence and src/scoring.js does the
+ * arithmetic deterministically. The model classifies; it never scores.
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+export const CANDIDATE_PROFILE = `Matt Young — Seattle, WA. 15+ years in infrastructure automation, observability, and agentic platforms.
+
+CAREER
+- Domotz — VP Product. 500K+ managed endpoints. Built an MCP-based agentic remediation platform.
+- VMware Wavefront — Director PM. Telemetry and observability at cloud scale. Churn 20% → 7%, 25% YoY revenue growth. Lyft and DoorDash as named partners.
+- Puppet — Sr Director / Director PM. Agent-based automation across 10M+ endpoints, 75% of the Fortune 100. Puppet Pipelines CI/CD (used by Disney).
+- HPE — Group / Senior PM. Co-created Monasca, an OpenStack observability project.
+- Sila Solutions — supporting Boeing Digital Aviation.
+
+OPEN SOURCE: OpenStack, CNCF, CDF, Puppet core product ownership.
+
+WHAT HE IS ACTUALLY OPTIMIZING FOR (this is not negotiable and is frequently missed):
+He is DELIBERATELY targeting Senior Director, Group PM, Staff, or Principal roles at
+established companies. He is stepping back from CPO and VP-of-everything scope ON PURPOSE
+— lower variance, better cash compensation, more predictable hours. His son is a senior in
+2026-2027 and he intends to be present for it. A CPO role at a hot startup is a BAD fit
+right now no matter how well the keywords line up.`;
+
+export const FIT_EXTRACTION_PROMPT = `You are an evidence extractor for a job-fit model. You do NOT score fit. You classify a job posting into structured signals; deterministic code computes the score from what you return.
+
+Return ONLY raw JSON — no markdown fences, no preamble.
+
+Schema:
+{
+  "domain": { "primary": "non_interchangeable" | "adjacent" | "novel",
+              "secondary": same enum or null,
+              "why": "one sentence" },
+  "title_band": "target" | "director" | "vp_scoped" | "org_owner" | "below" | "non_pm",
+  "title_band_why": "one sentence",
+  "non_interchangeable_matches": [ { "proof": "<proof key>", "strength": "direct" | "partial", "why": "one sentence" } ],
+  "stated_tc": number | null,
+  "stated_base": number | null,
+  "stated_variable": number | null,
+  "comp_note": "what the posting actually said about money, or 'not stated'",
+  "location_posture": "remote" | "seattle" | "hybrid_local" | "hybrid_remote" | "office_relocation",
+  "on_call": boolean,
+  "travel_heavy": boolean,
+  "known_gaps": [ { "gap": "<gap key>", "level": "required" | "preferred", "why": "one sentence" } ],
+  "strengths": [up to 4 short strings],
+  "gaps": [up to 3 short strings],
+  "quick_wins": [up to 3 short strings],
+  "verdict": "2-3 sentence honest assessment"
+}
+
+── DOMAIN CLASSIFICATION ──
+"non_interchangeable" — roles where he BUILT the thing the JD describes, not roles his
+  experience merely maps to: observability and telemetry, ITOM/AIOps, network and IT
+  operations management, infrastructure automation, agentic/MCP platforms, developer tooling.
+"adjacent" — general cloud infrastructure, data platform, SRE tooling, security operations.
+"novel" — GPU infrastructure, MicroVM/Firecracker, ML training platforms and direct MLflow
+  ownership, consumer, fintech, healthcare, martech.
+
+Use "secondary" when a role genuinely blends two classes. This matters: an observability
+product delivered ON GPU infrastructure is primary=non_interchangeable, secondary=novel,
+and the blend is what surfaces the real risk. Do not force a single class to be tidy.
+
+── TITLE BAND ──
+"target"     — Senior Director, Group PM, Staff PM, Principal PM. The band he wants.
+"director"   — Director. Adjacent to target.
+"vp_scoped"  — VP of Product at a LARGE company where the role is scoped, not "own everything".
+"org_owner"  — CPO, Head of Product, or VP of Product at a small company where he would BE
+               the product function. He is deliberately avoiding this. Classify honestly even
+               when the posting is attractive.
+"below"      — Senior PM or below.
+"non_pm"     — an engineering role wearing product language (VP Engineering, CTO, Principal Engineer).
+
+── NON-INTERCHANGEABILITY PROOF KEYS ──
+Emit a match ONLY when the JD describes a specific problem he has already solved. Generic
+senior-product-leader vocabulary is NOT a match — leave the array empty in that case.
+  "mcp_agentic"    — MCP-based agentic infrastructure (built at Domotz before BMC announced Agent Gateway)
+  "telemetry_econ" — high-cardinality telemetry and observability economics (Wavefront)
+  "agent_fleet"    — agent-based fleet management at 10M+ endpoint scale (Puppet)
+  "gitops_cicd"    — GitOps and CI/CD (Puppet Pipelines, Disney)
+  "open_source"    — OpenStack / CNCF / CDF track record, co-created Monasca
+"direct" = the JD names this problem. "partial" = clearly adjacent but not the same problem.
+
+── KNOWN GAP KEYS ──
+Emit only when the JD actually asks for it. "required" if listed as a requirement,
+"preferred" if a nice-to-have.
+  "gpu_infra"      — GPU infrastructure
+  "microvm"        — MicroVM / Firecracker
+  "mlflow"         — direct MLflow ownership / ML training platforms
+  "k8s_operators"  — Kubernetes operators, Helm chart authorship
+  "vendor_fluency" — deep single-vendor internal product knowledge an internal hire would have
+
+── COMPENSATION ──
+Report ONLY what the posting states, in thousands USD (e.g. 320 for $320,000).
+If the posting gives a base range, use the MIDPOINT as stated_base.
+If nothing is stated, return null. DO NOT estimate, infer from company reputation, or
+substitute a typical value. A null here is correct and expected; a guess corrupts the model.
+
+── LOCATION POSTURE ──
+"remote"            — genuinely remote
+"seattle"           — Seattle / Bellevue / Redmond / WA based
+"hybrid_local"      — hybrid in the Seattle area
+"hybrid_remote"     — hybrid requiring regular presence in another metro (Bay Area, NYC, etc.)
+"office_relocation" — requires relocating
+
+Be literal. If the posting says "hybrid — 3 days in our San Francisco office", that is
+hybrid_remote and it is a serious negative, not a detail.`;
+
+/** Builds the user message for an extraction call. */
+export function buildFitUserMessage({ title, company, location, jd }) {
+  return [
+    `JOB TITLE: ${title || "Not specified"}`,
+    `COMPANY: ${company || "Not specified"}`,
+    `LOCATION: ${location || "Not specified"}`,
+    ``,
+    `JOB DESCRIPTION:`,
+    jd || "(no description available)",
+    ``,
+    `CANDIDATE PROFILE:`,
+    CANDIDATE_PROFILE,
+  ].join("\n");
+}
+
+/** Maps the raw extraction JSON onto the signal shape computeFit() expects. */
+export function extractionToSignals(x, { company, jd }) {
+  return {
+    company,
+    domain: { primary: x?.domain?.primary, secondary: x?.domain?.secondary || null },
+    titleBand: x?.title_band,
+    nonInterchangeableMatches: Array.isArray(x?.non_interchangeable_matches) ? x.non_interchangeable_matches : [],
+    statedTc: x?.stated_tc ?? null,
+    statedBase: x?.stated_base ?? null,
+    statedVariable: x?.stated_variable ?? null,
+    locationPosture: x?.location_posture,
+    onCall: !!x?.on_call,
+    travelHeavy: !!x?.travel_heavy,
+    knownGaps: Array.isArray(x?.known_gaps) ? x.known_gaps : [],
+    jdChars: (jd || "").trim().length,
+  };
+}
