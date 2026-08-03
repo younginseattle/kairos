@@ -848,6 +848,11 @@ function ScoreExplanationBlock({ explanation }) {
 }
 
 function ScoreWarnings({ job, jd_text = "" }) {
+  // v1 warnings describe v1 penalties that v2 does not apply. Leaving them on
+  // produced a live contradiction: a job showing "Stretch penalty — 14 combined
+  // gap signals" whose actual v2 stretch multiplier was 1.000 (no penalty).
+  // v2 surfaces its own gates, gaps and confidence reasons in FitBreakdown.
+  if (job?._v2) return null;
   const msgs = getScoreExplanations({ ...job, jd_text, location: job.location || "" });
   if (!msgs.length) return null;
   return (
