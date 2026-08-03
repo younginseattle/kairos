@@ -229,8 +229,25 @@ export function scoreCompensation({ statedTc = null, statedBase = null, statedVa
 
   // Heavy variable comp is not equivalent to guaranteed base. Discount it 50%.
   let tc = statedTc;
+  let grossedUp = false;
   if (tc == null && statedBase != null) {
     tc = statedBase + (statedVariable != null ? statedVariable * 0.5 : 0);
+
+    // Base salary is NOT total comp, and the $400K anchor is a TC anchor.
+    // Most large-company postings state base only (pay-transparency law), so
+    // comparing a base figure against a TC anchor understates the package by
+    // roughly the equity share. Observed: a Microsoft Principal PM role listing
+    // a ~$209K base scored comp 28 and tripped the sub-$300K gate — a gate meant
+    // for genuinely low-paying roles — when the real package is ~$350K.
+    //
+    // Gross up ONLY when the company is in the facts table, so the cash share is
+    // a curated fact rather than a guess, and only when no variable comp was
+    // stated (a stated base+bonus pair is already a fuller picture). Unknown
+    // companies keep the conservative base-as-TC reading.
+    if (companyFacts && statedVariable == null) {
+      tc = tc / cashShareFor(companyFacts);
+      grossedUp = true;
+    }
   }
 
   let estimated = false;
@@ -256,10 +273,15 @@ export function scoreCompensation({ statedTc = null, statedBase = null, statedVa
   else if (effective >= 240) score = 44;
   else                        score = 28;
 
-  const noteBits = [`${estimated ? "estimated" : "stated"} TC ~$${Math.round(tc)}K`];
+  const noteBits = [];
+  if (grossedUp) {
+    noteBits.push(`stated base ~$${Math.round(statedBase)}K grossed up to ~$${Math.round(tc)}K TC (${Math.round(cashShare * 100)}% cash at this company)`);
+  } else {
+    noteBits.push(`${estimated ? "estimated" : "stated"} TC ~$${Math.round(tc)}K`);
+  }
   if (equity) noteBits.push(`${Math.round(equityShare * 100)}% ${equity} equity`);
   noteBits.push(`effective ~$${Math.round(effective)}K vs $400K anchor`);
-  return { score, tc, effective, estimated, equityShare, note: noteBits.join(", ") };
+  return { score, tc, effective, estimated, grossedUp, equityShare, note: noteBits.join(", ") };
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -485,6 +507,11 @@ export function computeFit(signals) {
     dimsTotal: dims.length,
     missingCritical,
   });
+  // A TC derived from a stated base is weaker evidence than a stated TC. Say so
+  // rather than presenting the grossed-up figure as if it were quoted.
+  if (c.grossedUp) {
+    reasons.push("total comp inferred from stated base — verify before treating comp as settled");
+  }
 
   return {
     score,

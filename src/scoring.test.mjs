@@ -221,13 +221,48 @@ const inThousands = computeFit({ ...dollarsBase, statedBase: 209 });
 check("comp stated in dollars is normalised to thousands (208800 -> 209)",
   inDollars.score === inThousands.score,
   `dollars ${inDollars.score} vs thousands ${inThousands.score}`);
-check("a ~$209K package does NOT score max compensation",
-  inDollars.subscores.compensation < 50, `got ${inDollars.subscores.compensation}`);
-check("sub-$300K gate fires on a dollars-denominated figure",
-  inDollars.gates.some(g => g.reason.includes("$300K")),
-  JSON.stringify(inDollars.gates.map(g => g.reason)));
+check("a ~$209K base does NOT score max compensation",
+  inDollars.subscores.compensation < 95, `got ${inDollars.subscores.compensation}`);
+// NOTE: this figure no longer trips the sub-$300K gate, and that is correct.
+// $209K is a BASE at Microsoft; grossed up it is ~$348K TC, which is genuinely
+// above the gate threshold. The gate is exercised against a truly low package
+// further down ("genuinely low base still trips the sub-$300K gate").
+check("a dollars-denominated figure is not mistaken for a $200M package",
+  inDollars.subscores.compensation === inThousands.subscores.compensation);
 check("realistic thousands values are left untouched (420 stays 420)",
   computeFit({ ...dollarsBase, statedTc: 420 }).subscores.compensation === 95);
+
+// Base salary is not total comp. Pay-transparency postings state base only, and
+// the $400K anchor is a TC anchor — comparing the two directly understated the
+// Microsoft Principal PM role enough to trip the sub-$300K gate at ~$209K base
+// when the real package is ~$350K.
+const basedOnly = computeFit({ ...dollarsBase, statedBase: 209 });
+check("stated base at a KNOWN company is grossed up to TC",
+  basedOnly.explanations.compensation.includes("grossed up"),
+  basedOnly.explanations.compensation);
+check("gross-up clears the sub-$300K gate for a ~$209K base at Microsoft",
+  !basedOnly.gates.some(g => g.reason.includes("$300K")),
+  JSON.stringify(basedOnly.gates.map(g => g.reason)));
+check("gross-up is disclosed in confidence reasons, not presented as quoted",
+  basedOnly.confidence_reasons.some(r => r.includes("inferred from stated base")));
+
+// Unknown company keeps the conservative reading — no guessed cash share.
+const unknownCo = computeFit({ ...dollarsBase, company: "Nobody Curated Inc", statedBase: 209 });
+check("unknown company does NOT gross up (cash share would be a guess)",
+  !unknownCo.explanations.compensation.includes("grossed up"),
+  unknownCo.explanations.compensation);
+
+// A genuinely low package must still gate even after gross-up.
+const trulyLow = computeFit({ ...dollarsBase, statedBase: 140 });
+check("genuinely low base still trips the sub-$300K gate after gross-up",
+  trulyLow.gates.some(g => g.reason.includes("$300K")),
+  `tc after gross-up implies ~$${Math.round(140 / 0.6)}K`);
+
+// base + variable stated together is already a fuller picture — don't gross up.
+const baseAndVar = computeFit({ ...dollarsBase, statedBase: 209, statedVariable: 100 });
+check("base + variable stated together is NOT grossed up",
+  !baseAndVar.explanations.compensation.includes("grossed up"),
+  baseAndVar.explanations.compensation);
 
 // Manual overrides.
 const overridden = computeFit({ ...CASES.elastic.signals, compVerifiedTc: 420 });
