@@ -633,11 +633,22 @@ export function classifyLocation(locationStr = "", jdText = "") {
 // API FUNCTIONS
 // ─────────────────────────────────────────────────────────────────
 
-async function callClaude({ apiKey, system, userMessage, maxTokens = 1500 }) {
+/**
+ * @param temperature 0 for extraction/scoring — pulling structured facts out of a
+ *   JD is not a creative task, and the default of 1.0 made the same posting score
+ *   differently on repeat runs (the same MCP evidence was rated "direct" on two
+ *   runs and "partial" on two others, moving the subscore 95 <-> 85). Left at the
+ *   default for genuinely generative prompts like resume tailoring.
+ */
+async function callClaude({ apiKey, system, userMessage, maxTokens = 1500, temperature = null }) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey.trim(), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system, messages: [{ role: "user", content: userMessage }] }),
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6", max_tokens: maxTokens, system,
+      ...(temperature != null ? { temperature } : {}),
+      messages: [{ role: "user", content: userMessage }],
+    }),
   });
   const data = await res.json();
   if (data.error) throw new Error(`Claude API: ${data.error.message}`);
@@ -655,6 +666,7 @@ async function runEvaluation({ apiKey, jd, profile, location, title = "", compan
   const extraction = await callClaude({
     apiKey,
     system: FIT_EXTRACTION_PROMPT,
+    temperature: 0,
     userMessage: buildFitUserMessage({ title, company, location, jd }),
     maxTokens: 1500,
   });
