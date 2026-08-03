@@ -204,8 +204,28 @@ function cashShareFor(companyFacts) {
   return 0.65;                                                    // private growth
 }
 
+/**
+ * The extraction prompt asks for compensation in thousands ("320" for $320,000),
+ * but models routinely return raw dollars instead. Observed in production: a
+ * Microsoft role with a ~$209K base came back as 208800, which scored comp 95/95
+ * instead of 28 AND slipped past the sub-$300K gate (208800 > 300) that should
+ * have capped the whole role at 55 — an ~34-point error from a units mismatch.
+ *
+ * No plausible role in this search has a $2M+ package, so anything above 2000 is
+ * unambiguously dollars. Normalising here rather than in the prompt because
+ * prompt instructions are advisory and this failure is silent.
+ */
+export function normalizeTcThousands(v) {
+  if (v == null || !Number.isFinite(v)) return null;
+  return v > 2000 ? v / 1000 : v;
+}
+
 export function scoreCompensation({ statedTc = null, statedBase = null, statedVariable = null, companyFacts = null }) {
   const equity = companyFacts?.equity || null;
+
+  statedTc       = normalizeTcThousands(statedTc);
+  statedBase     = normalizeTcThousands(statedBase);
+  statedVariable = normalizeTcThousands(statedVariable);
 
   // Heavy variable comp is not equivalent to guaranteed base. Discount it 50%.
   let tc = statedTc;

@@ -203,6 +203,32 @@ check("comp unknown + company unknown → comp dimension EXCLUDED, not imputed",
 check("comp unverified cannot reach apply-now tier (ceiling 84)",
   noComp.score <= 84, `got ${noComp.score}`);
 
+// Compensation units. Found in production: a Microsoft role with a ~$209K base
+// came back from the LLM as 208800 (dollars, not thousands). That scored comp
+// 95/95 instead of 28 AND slipped past the sub-$300K gate, inflating the role
+// from ~55 to 89. The prompt already says "in thousands"; models ignore it.
+const dollarsBase = {
+  company: "Microsoft",
+  domain: { primary: "non_interchangeable", secondary: "adjacent" },
+  titleBand: "target",
+  nonInterchangeableMatches: [{ proof: "mcp_agentic", strength: "direct" }],
+  locationPosture: "seattle",
+  knownGaps: [],
+  jdChars: 3000,
+};
+const inDollars   = computeFit({ ...dollarsBase, statedBase: 208800 });
+const inThousands = computeFit({ ...dollarsBase, statedBase: 209 });
+check("comp stated in dollars is normalised to thousands (208800 -> 209)",
+  inDollars.score === inThousands.score,
+  `dollars ${inDollars.score} vs thousands ${inThousands.score}`);
+check("a ~$209K package does NOT score max compensation",
+  inDollars.subscores.compensation < 50, `got ${inDollars.subscores.compensation}`);
+check("sub-$300K gate fires on a dollars-denominated figure",
+  inDollars.gates.some(g => g.reason.includes("$300K")),
+  JSON.stringify(inDollars.gates.map(g => g.reason)));
+check("realistic thousands values are left untouched (420 stays 420)",
+  computeFit({ ...dollarsBase, statedTc: 420 }).subscores.compensation === 95);
+
 // Manual overrides.
 const overridden = computeFit({ ...CASES.elastic.signals, compVerifiedTc: 420 });
 check("manual comp override raises the score above the unverified case",
