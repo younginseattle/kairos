@@ -542,6 +542,7 @@ export async function runClaudeEvaluation(supabaseClient, job, anthropicApiKey, 
       body: JSON.stringify({
         model:      "claude-sonnet-4-6",
         max_tokens: 1500,
+        temperature: 0,   // extraction is not a creative task
         system:     FIT_EXTRACTION_PROMPT,
         messages:   [{ role: "user", content: buildFitUserMessage({
           title: job.title, company: job.company, location: job.location, jd: job.description,
