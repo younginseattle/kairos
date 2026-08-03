@@ -264,6 +264,34 @@ check("base + variable stated together is NOT grossed up",
   !baseAndVar.explanations.compensation.includes("grossed up"),
   baseAndVar.explanations.compensation);
 
+// The LLM put the ~$209K base midpoint in stated_tc rather than stated_base,
+// so the gross-up never fired and the role stayed gated at 55. Field choice is
+// unreliable; magnitude is not. A figure well below what this company pays at
+// this level is a base figure regardless of which field it arrived in.
+const misfiled = computeFit({ ...dollarsBase, statedTc: 209 });
+check("a stated_tc far below the company's level band is re-read as base",
+  misfiled.explanations.compensation.includes("read as base"),
+  misfiled.explanations.compensation);
+check("re-read base clears the spurious sub-$300K gate",
+  !misfiled.gates.some(g => g.reason.includes("$300K")),
+  JSON.stringify(misfiled.gates.map(g => g.reason)));
+check("misfiled stated_tc now matches the stated_base path exactly",
+  misfiled.score === basedOnly.score, `${misfiled.score} vs ${basedOnly.score}`);
+
+// A genuine, plausible stated TC must NOT be re-read as base.
+const genuineTc = computeFit({ ...dollarsBase, statedTc: 400 });
+check("a plausible stated TC is left alone (not re-read as base)",
+  !genuineTc.explanations.compensation.includes("read as base"),
+  genuineTc.explanations.compensation);
+check("a plausible stated TC still scores on its own merits",
+  genuineTc.subscores.compensation === 95, String(genuineTc.subscores.compensation));
+
+// Unknown company has no level band to compare against — stay conservative.
+const misfiledUnknown = computeFit({ ...dollarsBase, company: "Nobody Curated Inc", statedTc: 209 });
+check("unknown company does NOT re-read stated_tc as base (no band to judge against)",
+  !misfiledUnknown.explanations.compensation.includes("read as base"),
+  misfiledUnknown.explanations.compensation);
+
 // Manual overrides.
 const overridden = computeFit({ ...CASES.elastic.signals, compVerifiedTc: 420 });
 check("manual comp override raises the score above the unverified case",

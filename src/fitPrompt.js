@@ -105,10 +105,21 @@ Emit only when the JD actually asks for it. "required" if listed as a requiremen
   "vendor_fluency" — deep single-vendor internal product knowledge an internal hire would have
 
 ── COMPENSATION ──
-Report ONLY what the posting states, in thousands USD (e.g. 320 for $320,000).
-If the posting gives a base range, use the MIDPOINT as stated_base.
-If nothing is stated, return null. DO NOT estimate, infer from company reputation, or
-substitute a typical value. A null here is correct and expected; a guess corrupts the model.
+Report ONLY what the posting states, in THOUSANDS of USD. 320 means $320,000.
+Never return 320000. Never return a dollars figure.
+
+Almost every posting quotes a BASE SALARY range, because pay-transparency law requires
+it — total compensation is essentially never quoted, since it depends on an equity grant
+and bonus target the posting does not contain. Therefore:
+  - A salary range or single salary figure → put the MIDPOINT in "stated_base".
+  - Use "stated_tc" ONLY when the posting explicitly says "total compensation",
+    "OTE", or "total rewards package" and gives a number for it.
+  - When in doubt it is a base. Put it in stated_base.
+  - Put a separately stated bonus or commission target in "stated_variable".
+
+If nothing is stated, return null for all three. DO NOT estimate, infer from company
+reputation, or substitute a typical value. A null here is correct and expected; a guess
+corrupts the model.
 
 ── LOCATION POSTURE ──
 "remote"            — genuinely remote
