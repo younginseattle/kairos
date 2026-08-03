@@ -657,10 +657,32 @@ async function callClaude({ apiKey, system, userMessage, maxTokens = 1500, tempe
 }
 
 async function generateSearchPlan({ apiKey, profile }) { return callClaude({ apiKey, system: SEARCH_PLAN_PROMPT, userMessage: `CANDIDATE PROFILE:\n${profile}`, maxTokens: 2500 }); }
+/** The four v2 columns, in the shape the `jobs` table and enrichJob() expect. */
+export function fitColumns(fit) {
+  return {
+    fit_score:         fit.score,
+    fit_confidence:    fit.confidence,
+    fit_model_version: fit.model_version,
+    fit_detail: {
+      subscores: fit.subscores, explanations: fit.explanations,
+      gates: fit.gates, gaps: fit.gaps, math: fit.math, band: fit.band,
+      confidence_reasons: fit.confidence_reasons,
+    },
+  };
+}
+
 /**
  * Evaluate a JD. Claude extracts structured evidence; scoring.js computes the
  * number. Returns a legacy-shaped object so existing callers keep working,
- * with the full v2 detail attached as `.fit`.
+ * with the full v2 detail attached as `.fit` and as the four `fit_*` columns.
+ *
+ * `company` is NOT optional in practice: it is the key into companyFacts, which
+ * supplies the level read (does a VP background read as an asset here?), the
+ * cash/equity split used to gross a stated base up to TC, and the equity
+ * liquidity factor. Calling without it silently produced a materially different
+ * score — the Microsoft M365 AIOps role scored 88 with it and 54 without, because
+ * an unknown company drops level from 95 to the neutral 78, blocks the base→TC
+ * gross-up, and so trips the sub-$300K gate on what is really a ~$350K package.
  */
 async function runEvaluation({ apiKey, jd, profile, location, title = "", company = "" }) {
   const extraction = await callClaude({
@@ -674,6 +696,11 @@ async function runEvaluation({ apiKey, jd, profile, location, title = "", compan
   return {
     ...extraction,
     fit,
+    // Returned as columns, not just as `.fit`, so enrichJob() takes its v2
+    // branch. Without these the Evaluate tab fell through to the v1 path and
+    // re-applied a client-side location penalty that the burden dimension had
+    // already priced — the same role rendered 52 against a computed 54.
+    ...fitColumns(fit),
     overall_score: fit.score,
     confidence:    fit.confidence,
     recommendation:
@@ -1115,21 +1142,29 @@ function EvalPanel({ title, subtitle, result, jd_text, location, loading, error,
             </div>
             <TopCandidateSignal signal={result.top_candidate_signal} />
             <ScoreExplanationBlock explanation={result.score_explanation} />
-            <ScoreWarnings job={{ ...result, location: result.location || "" }} jd_text={jd_text} />
+            {/* enriched, not result — ScoreWarnings suppresses itself on _v2, and
+                result carries no _v2 flag, so v1 warnings were showing on v2 cards. */}
+            <ScoreWarnings job={{ ...enriched, location: result.location || "" }} jd_text={jd_text} />
             <Divider />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-              {[
-                { label: "Skills",      value: result.skills_match },
-                { label: "Experience",  value: result.experience_match },
-                { label: "Location",    value: result.location_score },
-                { label: "Work/Life",   value: result.work_life_balance_score },
-              ].map(({ label, value }) => (
-                <div key={label} style={{ background: T.surface, borderRadius: 7, padding: "10px 12px", border: `1px solid ${T.borderFaint}` }}>
-                  <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, marginBottom: 4 }}>{label.toUpperCase()}</div>
-                  <span style={{ fontFamily: T.fontMono, fontSize: 32, fontWeight: 700, color: scoreColor(value || 0), lineHeight: 1 }}>{value ?? "—"}</span>
-                </div>
-              ))}
-            </div>
+            {/* The four legacy tiles are remapped v2 subscores: "Skills" is really
+                non-interchangeability and "Location"/"Work/Life" are both burden.
+                They also never showed domain or compensation — the two dimensions
+                that most often drive the score. Show the real breakdown instead. */}
+            {enriched._v2 ? <FitBreakdown job={enriched} /> : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                {[
+                  { label: "Skills",      value: result.skills_match },
+                  { label: "Experience",  value: result.experience_match },
+                  { label: "Location",    value: result.location_score },
+                  { label: "Work/Life",   value: result.work_life_balance_score },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ background: T.surface, borderRadius: 7, padding: "10px 12px", border: `1px solid ${T.borderFaint}` }}>
+                    <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, marginBottom: 4 }}>{label.toUpperCase()}</div>
+                    <span style={{ fontFamily: T.fontMono, fontSize: 32, fontWeight: 700, color: scoreColor(value || 0), lineHeight: 1 }}>{value ?? "—"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <Divider />
             {[{ label: "Strengths", items: result.strengths, color: T.green }, { label: "Gaps", items: result.gaps, color: T.red }, { label: "Quick Wins", items: result.quick_wins, color: T.blue }].map(({ label, items, color }) =>
               items?.length ? <div key={label} style={{ marginBottom: 10 }}><Label>{label}</Label><div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>{items.map(item => <span key={item} style={{ fontFamily: T.fontSans, fontSize: 11, color, padding: "2px 8px", border: `1px solid ${color}22`, borderRadius: 3 }}>{item}</span>)}</div></div> : null
@@ -1477,6 +1512,7 @@ export default function JobSearchAgent() {
       confidence_score: result.confidence, missing_keywords: result.missing_keywords || [],
       strategic_gaps: result.strategic_gaps || [], score_explanation: result.score_explanation || null,
       top_candidate_signal: result.top_candidate_signal || null,
+      ...fitColumns(result.fit),
     };
     const { error } = await supabase.from('jobs').insert(fields);
     if (error) { console.error(error); return; }
@@ -1702,7 +1738,7 @@ async function doQuickScore(job) {
     if (!anthropicKey) { setEvalError("Add your Anthropic API key in Settings."); return; }
     if (!manualJd.trim()) { setEvalError("Paste a job description first."); return; }
     setEvalResult(null); setEvalError(""); setManualSaved(false); setEvalLoading(true);
-    try { setEvalResult(await runEvaluation({ apiKey: anthropicKey, jd: manualJd, profile, location: manualLocation })); }
+    try { setEvalResult(await runEvaluation({ apiKey: anthropicKey, jd: manualJd, profile, location: manualLocation, title: manualTitle, company: manualCompany })); }
     catch (e) { setEvalError(`Evaluation failed: ${e.message}`); }
     setEvalLoading(false);
   }
@@ -1789,6 +1825,7 @@ async function doQuickScore(job) {
         strategic_gaps:          evalResult.strategic_gaps || [],
         score_explanation:       evalResult.score_explanation || null,
         top_candidate_signal:    evalResult.top_candidate_signal || null,
+        ...fitColumns(evalResult.fit),
       };
       if (manualJobId) {
         // Re-evaluating existing job — update the row
@@ -1908,7 +1945,7 @@ async function doQuickScore(job) {
     if (!anthropicKey) { setReEvalError("Add your Anthropic API key in Settings."); return; }
     setInlineRescoring(prev => ({ ...prev, [job.id]: true }));
     try {
-      const result = await runEvaluation({ apiKey: anthropicKey, jd, profile, location: job.location || "" });
+      const result = await runEvaluation({ apiKey: anthropicKey, jd, profile, location: job.location || "", title: job.title, company: job.company });
       const fields = {
         description:             jd,
         score:                   result.overall_score,
@@ -1930,6 +1967,7 @@ async function doQuickScore(job) {
         strategic_gaps:          result.strategic_gaps          || [],
         score_explanation:       result.score_explanation       || null,
         top_candidate_signal:    result.top_candidate_signal    || null,
+        ...fitColumns(result.fit),
       };
       const { error } = await supabase.from('jobs').update(fields).eq('id', job.id);
       if (error) throw new Error(error.message);
@@ -1993,14 +2031,7 @@ async function doQuickScore(job) {
           location_score:          ev.location_score,
           company_score:           ev.company_score,
           confidence_score:        ev.confidence,
-          fit_score:               fit.score,
-          fit_confidence:          fit.confidence,
-          fit_model_version:       fit.model_version,
-          fit_detail: {
-            subscores: fit.subscores, explanations: fit.explanations,
-            gates: fit.gates, gaps: fit.gaps, math: fit.math, band: fit.band,
-            confidence_reasons: fit.confidence_reasons,
-          },
+          ...fitColumns(fit),
         }).eq('id', job.id);
 
         if (updateError) throw new Error(updateError.message);
@@ -2016,13 +2047,7 @@ async function doQuickScore(job) {
           work_life_balance_score: ev.work_life_balance_score,
           growth_score: ev.growth_score, location_score: ev.location_score,
           company_score: ev.company_score, confidence_score: ev.confidence,
-          fit_score: fit.score, fit_confidence: fit.confidence,
-          fit_model_version: fit.model_version,
-          fit_detail: {
-            subscores: fit.subscores, explanations: fit.explanations,
-            gates: fit.gates, gaps: fit.gaps, math: fit.math, band: fit.band,
-            confidence_reasons: fit.confidence_reasons,
-          },
+          ...fitColumns(fit),
         } : j));
 
         succeeded++;
