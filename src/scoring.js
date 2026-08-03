@@ -227,6 +227,26 @@ export function scoreCompensation({ statedTc = null, statedBase = null, statedVa
   statedBase     = normalizeTcThousands(statedBase);
   statedVariable = normalizeTcThousands(statedVariable);
 
+  // US pay-transparency postings state a BASE range; total comp is essentially
+  // never quoted, because it requires an RSU grant and bonus target the posting
+  // does not contain. So a figure landing in stated_tc that sits well below what
+  // this company pays at this level is a base figure in the wrong field.
+  //
+  // Observed twice now on the same Microsoft role: first the model returned
+  // dollars instead of thousands, then — after that was fixed — it put the
+  // ~$209K base midpoint in stated_tc rather than stated_base, so the gross-up
+  // never fired and the sub-$300K gate capped a ~$350K package at 55. Field
+  // choice is not reliable, so this is inferred from magnitude instead.
+  let reinterpretedAsBase = false;
+  if (statedTc != null && statedBase == null && companyFacts?.tcBand) {
+    const expected = TC_BAND_ESTIMATE[companyFacts.tcBand];
+    if (statedTc < expected * 0.75) {
+      statedBase = statedTc;
+      statedTc = null;
+      reinterpretedAsBase = true;
+    }
+  }
+
   // Heavy variable comp is not equivalent to guaranteed base. Discount it 50%.
   let tc = statedTc;
   let grossedUp = false;
@@ -275,7 +295,10 @@ export function scoreCompensation({ statedTc = null, statedBase = null, statedVa
 
   const noteBits = [];
   if (grossedUp) {
-    noteBits.push(`stated base ~$${Math.round(statedBase)}K grossed up to ~$${Math.round(tc)}K TC (${Math.round(cashShare * 100)}% cash at this company)`);
+    const src = reinterpretedAsBase
+      ? `quoted ~$${Math.round(statedBase)}K read as base (postings quote base, not TC)`
+      : `stated base ~$${Math.round(statedBase)}K`;
+    noteBits.push(`${src} grossed up to ~$${Math.round(tc)}K TC (${Math.round(cashShare * 100)}% cash at this company)`);
   } else {
     noteBits.push(`${estimated ? "estimated" : "stated"} TC ~$${Math.round(tc)}K`);
   }
