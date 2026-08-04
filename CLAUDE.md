@@ -64,6 +64,28 @@ Node.js script. Reads env from `.env` file. Calls `runJobIngestion`. Run as:
 node --env-file=.env src/run-ingestion.mjs
 ```
 
+### `src/bulkImport.js`
+Bulk import of a curated list of jobs (a spreadsheet export, a scan result, a pasted table).
+
+Reuses the back half of `ingestion.js` — `normalizeJob`, `isDuplicateJob`, `insertJob`, `runClaudeEvaluation`, `shouldAutoPass` — so imported rows dedup and score exactly like ATS and LinkedIn jobs. Only the front half differs: rows come from a file instead of an ATS API.
+
+Key exports:
+- `parseJobRows(text)` — CSV, TSV, markdown table, or JSON array → row objects. Needs a header row naming a title column and a url column; unrecognized columns are kept and folded into the fallback description.
+- `fetchJobDescription(url)` — best-effort JD retrieval (Greenhouse and Ashby board APIs, generic HTML strip otherwise). Returns `""` on failure.
+- `runBulkImport(supabase, anthropicKey, rows, opts)` — dedup → insert → score → auto-pass.
+
+The ATS title filter is **off** by default here: curated rows are already vetted, and the filter drops anything containing "security" and every "Sr." that isn't spelled "Senior". Pass `applyTitleFilter: true` (CLI `--filter`) for an untrusted list.
+
+### `src/run-bulk-import.mjs`
+Node CLI for the above. Run as:
+```bash
+node --env-file=.env src/run-bulk-import.mjs src/data/pm-job-scan-2026-08-04.csv
+# --dry-run  --no-fetch  --no-score  --filter  --source=NAME
+```
+The same parser backs the Discover tab's import box, so a table can also be pasted straight into the app.
+
+Tests: `node src/bulkImport.test.mjs` (offline — HTTP is stubbed on localhost).
+
 ### `src/run-briefing.mjs`
 Node.js script. Queries Supabase for last 24h jobs. Writes markdown briefing to `~/Desktop`. Run as:
 ```bash

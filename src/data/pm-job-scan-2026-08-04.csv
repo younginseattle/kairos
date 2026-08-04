@@ -1,0 +1,39 @@
+Fit Rank,Fit Tier,Title,Company,Location,Remote Type,Level,Posted,URL
+1,A,Staff Product Manager - Observability,Lambda,"Bellevue, WA",Hybrid-with-WA-anchor,Staff (Principal-equiv.),n/a,https://jobs.ashbyhq.com/lambda/cb7fe04b-0c99-4dbc-afa6-4a05a9c8cac1
+2,A,"Staff Product Manager, Real Time Data Analytics Platform",Confluent,"Remote, Washington (also Remote US)",Hybrid-with-WA-anchor / Remote-anywhere,Staff (Principal-equiv.),n/a,https://careers.confluent.io/jobs/job/81b94a4e-53d3-40d5-9c04-af57bd01961c
+3,A,Principal Product Manager - ClickHouse Cloud,ClickHouse,US (remote),Remote-anywhere,Principal,n/a,https://job-boards.greenhouse.io/clickhouse/jobs/5680773004
+4,A,Principal Product Manager - Ecosystems & Connectors,ClickHouse,US (remote),Remote-anywhere,Principal,n/a,https://job-boards.greenhouse.io/clickhouse/jobs/6010655004
+5,A,"Principal Product Manager, Security",ClickHouse,US (remote),Remote-anywhere,Principal,n/a,https://job-boards.greenhouse.io/clickhouse/jobs/5754046004
+6,A,"Director of Product, ClickHouse Cloud",ClickHouse,US (remote),Remote-anywhere,Director,n/a,https://job-boards.greenhouse.io/clickhouse/jobs/6131356004
+7,A,"Principal, Product Manager",Confluent,"Remote, US",Remote-anywhere,Principal,n/a,https://careers.confluent.io/jobs/job/f7356433-e9cd-437b-9048-587b11333bb1
+8,A,"Staff Product Manager, Cloud Networking",Confluent,"Remote, US",Remote-anywhere,Staff (Principal-equiv.),n/a,https://careers.confluent.io/jobs/job/e70deb8a-3308-49dd-b9c7-b537333c5645
+9,A,"Staff Product Manager, AI Platform",Databricks,"Seattle, WA",Onsite/Hybrid WA,Staff (Principal-equiv.),n/a,https://www.databricks.com/company/careers/product/staff-product-manager-ai-platform-8427940002
+10,A,"Staff Product Manager, Security",Databricks,"Seattle, WA",Onsite/Hybrid WA,Staff (Principal-equiv.),n/a,https://www.databricks.com/company/careers/product/staff-product-manager-security-7110509002
+11,A,"Staff Product Manager, Serverless Workspaces",Databricks,"Seattle, WA",Onsite/Hybrid WA,Staff (Principal-equiv.),n/a,https://www.databricks.com/company/careers/product/staff-product-manager-serverless-workspaces-8427954002
+12,A,"Staff Product Manager, Unistore (Hybrid Tables)",Snowflake,"Bellevue, WA (also Menlo Park, CA)",Onsite/Hybrid WA,Staff (Principal-equiv.),n/a,https://careers.snowflake.com/us/en/job/SNCOUSF1B77C7FBD174E53BEB436A6B0ACAD90EXTERNALENUS2860302B444C49F4B764FF462EFBFCC0/Staff-Product-Manager-Unistore-Hybrid-Tables
+13,B,"Principal Product Manager - Tech, DynamoDB",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Principal,"Jan 26, 2026",https://www.amazon.jobs/en/jobs/3166895/principal-product-manager-tech-dynamodb
+14,B,"Principal Product Manager - Technical, Amazon DocumentDB",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Principal,"Apr 28, 2026",https://www.amazon.jobs/en/jobs/10405887/principal-product-manager-technical-amazon-documentdb
+15,B,"Principal Product Manager - Technical ES, Kiro",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Principal,"Jun 16, 2026",https://www.amazon.jobs/en/jobs/10450406/principal-product-manager-technical-es-kiro
+16,B,"Principal Product Manager, AWS Neurosymbolic AI",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Principal,"May 13, 2026",https://www.amazon.jobs/en/jobs/10419273/principal-product-manager-aws-neurosymbolic-ai
+17,B,"Principal Product Manager, Tech, Amazon Connect",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Principal,"Mar 30, 2026",https://www.amazon.jobs/en/jobs/10379593/principal-product-manager-tech-amazon-connect
+18,B,"Principal Product Manager, Technical, AWS Healthcare AI",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Principal,"Aug 3, 2026",https://www.amazon.jobs/en/jobs/10491058/principal-product-manager-technical-aws-healthcare-ai
+19,B,Principal Product Manager - Hardware,Lambda,"Bellevue, WA",Onsite/Hybrid WA,Principal,n/a,https://jobs.ashbyhq.com/lambda/bb47e828-8b60-42dd-8d4e-d2692c87cdc8
+20,B,Staff Product Manager - Security,Lambda,"Bellevue, WA",Onsite/Hybrid WA,Staff (Principal-equiv.),n/a,https://jobs.ashbyhq.com/lambda/3e9c5ab9-7fa1-4988-8ba6-bf9df69a0019
+21,B,"Staff Product Manager, Compute",Crusoe,"Bellevue, WA (also Sunnyvale/SF)",Onsite/Hybrid WA,Staff (Principal-equiv.),n/a,https://jobs.ashbyhq.com/Crusoe/68cbbe99-8fd8-4923-ad2b-f119206e274b
+22,C,Product Management Director (Security for AI),Infoblox,"Tacoma, WA",Hybrid-with-WA-anchor,Director,n/a,https://efpv.fa.us6.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/7825/
+23,C,"Manager, Group Product Manager - Platform",Lambda,"Bellevue, WA",Onsite/Hybrid WA,GPM,n/a,https://jobs.ashbyhq.com/lambda/d3cbe760-3c91-4cb1-accf-dca60f0406aa
+24,D,"Sr. Product Manager - GenAI, SageMaker",Amazon AWS,"Bellevue, WA",Onsite/Hybrid WA,Senior (ML platform),"Jun 8, 2026",https://www.amazon.jobs/en/jobs/10442440/sr-product-manager-genai-sagemaker-sagemaker
+25,D,"Senior Product Manager - Technical, Amazon Keyspaces",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Senior (DB/infra),"Jul 28, 2026",https://www.amazon.jobs/en/jobs/10486505/senior-product-manager-technical-amazon-keyspaces
+26,D,"Senior Product Manager - Technical, Amazon DynamoDB",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Senior (DB/infra),"Aug 3, 2026",https://www.amazon.jobs/en/jobs/10490564/senior-product-manager-technical-amazon-dynamodb
+27,D,"Senior Technical Product Manager, AWS EC2",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Senior (compute infra),"Jul 20, 2026",https://www.amazon.jobs/en/jobs/10479174/senior-technical-product-manager-aws-ec2
+28,D,"Senior Product Manager, Technical, Database Services",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Senior (DB/infra),"Jun 29, 2026",https://www.amazon.jobs/en/jobs/10461470/senior-product-manager-technical-database-services
+29,D,"Sr. Product Manager Technical, Secrets Management",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Senior (security infra),"Jul 7, 2026",https://www.amazon.jobs/en/jobs/10468212/sr-product-manager-technical-secrets-management
+30,D,"Sr Product Manager - Technical, AWS Serverless Compute",Amazon AWS,"Seattle, WA",Onsite/Hybrid WA,Senior (compute infra),"Jul 21, 2026",https://www.amazon.jobs/en/jobs/10480387/sr-product-manager-technical-aws-serverless-compute
+31,D,"Sr. Product Manager, Compute Platform",Databricks,"Seattle, WA",Onsite/Hybrid WA,Senior (infra),n/a,https://www.databricks.com/company/careers/product/sr-product-manager-compute-platform-8200284002
+32,D,"Sr. Product Manager, Data Governance",Databricks,"Seattle, WA",Onsite/Hybrid WA,Senior (data platform),n/a,https://www.databricks.com/company/careers/product/sr-product-manager-data-governance-7863522002
+33,D,"Sr. Product Manager, Databricks AI",Databricks,"Seattle, WA",Onsite/Hybrid WA,Senior (AI platform),n/a,https://www.databricks.com/company/careers/product/sr-product-manager-databricks-ai-8136204002
+34,D,"Sr. Product Manager, Databricks Repos",Databricks,"Seattle, WA",Onsite/Hybrid WA,Senior (dev-facing),n/a,https://www.databricks.com/company/careers/product/sr-product-manager-databricks-repos-8326570002
+35,D,"Senior Product Manager, Kafka Connect",Confluent,"Remote, US (also CA/NY)",Remote-anywhere,Senior (data-integration infra),n/a,https://careers.confluent.io/jobs/job/21082b9f-440a-4ba6-a469-c70d339d1aa9
+36,D,"Senior Product Manager, Cloud Networking",Confluent,"Remote, US (also CA/NY)",Remote-anywhere,Senior (infra),n/a,https://careers.confluent.io/jobs/job/1946b144-eaa5-482f-b235-63cc06104ecc
+37,D,"Senior Product Manager, Developer Experience",Confluent,"Remote, US",Remote-anywhere,Senior (dev-facing),n/a,https://careers.confluent.io/jobs/job/69b37f70-0978-472e-86a9-2d19ba70820f
+38,E,Staff Product Manager - Billing,Lambda,"Bellevue, WA",Onsite/Hybrid WA,Staff (Principal-equiv.),n/a,https://jobs.ashbyhq.com/lambda/2a8716e7-27e2-4585-8676-48055071ea34
