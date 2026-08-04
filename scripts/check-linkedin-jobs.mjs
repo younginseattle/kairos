@@ -13,8 +13,11 @@
  *   DELAY_MS=1500  — milliseconds between requests (default 1500)
  */
 
-import ws from 'ws';
-globalThis.WebSocket = ws;
+// Node 22 has a native WebSocket; older runtimes do not. Shim only when needed
+// and do not hard-depend on `ws`, which resolves only transitively here.
+if (typeof globalThis.WebSocket === 'undefined') {
+  try { globalThis.WebSocket = (await import('ws')).default; } catch { /* realtime unused */ }
+}
 
 const { createClient } = await import('@supabase/supabase-js');
 
@@ -56,6 +59,11 @@ const CLOSED_SIGNALS = [
 // LinkedIn returns 999 for aggressive bot detection — treat as unknown, not closed
 const BOT_BLOCK_STATUS = 999;
 
+// Safety valve for a bulk destructive job. Real-world closure rates are low and
+// gradual; anything above this points at a systemic misread, not reality.
+const MAX_CLOSED_RATE       = 0.40;
+const MIN_SAMPLE_FOR_GUARD  = 10;
+
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
   'AppleWebKit/537.36 (KHTML, like Gecko) ' +
@@ -87,15 +95,31 @@ async function checkUrl(url) {
     // Hard 404 — job definitely removed
     if (res.status === 404) return { open: false, reason: '404 not found' };
 
-    // Redirected to a search/browse page — job expired
+    // A redirect away from the job page is NOT evidence the job closed.
+    //
+    // /authwall is LinkedIn's LOGIN wall. It is served to unauthenticated
+    // requests — which is every request this script makes, since it carries no
+    // session cookie. It means "you are not signed in", not "this job is gone".
+    // Treating it as closed archived live roles every single day: 54 of the
+    // highest-scoring roles in the pipeline (Grafana 91, Cisco 88, Splunk 87,
+    // NVIDIA, Google, AWS, Microsoft…) ended up 'closed', which the app hides.
+    //
+    // /jobs/search and /jobs/collections are the same problem in a milder form:
+    // LinkedIn does redirect expired postings there, but it also bounces
+    // anonymous traffic there, and from outside a session the two are
+    // indistinguishable. The cost is wildly asymmetric — a stale row left
+    // visible costs one glance, a live role archived mid-interview can cost the
+    // opportunity — so anything short of proof now reads as unknown.
     const finalUrl = res.url || url;
+    if (finalUrl.includes('/authwall')) {
+      return { open: null, reason: 'authwall — not signed in, status unknowable' };
+    }
     if (
       finalUrl.includes('/jobs/search') ||
       finalUrl.includes('/jobs/collections') ||
-      finalUrl.includes('linkedin.com/jobs/?') ||
-      finalUrl.includes('/authwall')
+      finalUrl.includes('linkedin.com/jobs/?')
     ) {
-      return { open: false, reason: `redirected to ${new URL(finalUrl).pathname}` };
+      return { open: null, reason: `redirected to ${new URL(finalUrl).pathname} — anonymous bounce or expiry, cannot tell` };
     }
 
     // Rate limited — skip, don't mark closed
@@ -136,7 +160,12 @@ async function main() {
     .from('jobs')
     .select('id, title, company, url, status')
     .like('url', '%linkedin.com%')
-    .not('status', 'in', '("pass","closed")')
+    // Never touch a role you are IN PROCESS on. A posting coming down while you
+    // interview is the normal case — the req closes once they have a pipeline —
+    // and archiving it destroys real-world state the app cannot re-derive.
+    // status is a single column, so writing 'closed' over 'interviewing' erases
+    // the only record that you were ever interviewing.
+    .not('status', 'in', '("pass","closed","applied","interviewing","offer","rejected")')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -153,7 +182,11 @@ async function main() {
   }
 
   let open = 0, closed = 0, unknown = 0, failed = 0;
+  const toClose = [];
 
+  // Decide everything BEFORE writing anything, so the sanity check below sees
+  // the whole picture. Writing as we went meant a systemic misread was already
+  // half-applied by the time it was observable.
   for (let i = 0; i < candidates.length; i++) {
     const job = candidates[i];
     process.stdout.write(`  [${i + 1}/${candidates.length}] ${job.title} — ${job.company} … `);
@@ -166,16 +199,7 @@ async function main() {
     } else if (result.open === false) {
       closed++;
       console.log(`✗ closed (${result.reason})`);
-      if (!DRY_RUN) {
-        const { error: updateErr } = await supabase
-          .from('jobs')
-          .update({ status: 'closed' })
-          .eq('id', job.id);
-        if (updateErr) {
-          console.error(`    ✗ Supabase update failed: ${updateErr.message}`);
-          failed++;
-        }
-      }
+      toClose.push({ job, reason: result.reason });
     } else {
       unknown++;
       console.log(`? unknown (${result.reason})`);
@@ -183,6 +207,33 @@ async function main() {
 
     // Polite delay between requests — avoids rate-limiting
     if (i < candidates.length - 1) await sleep(DELAY_MS);
+  }
+
+  // Jobs do not close en masse overnight. A high closed-rate is far better
+  // explained by something systemic — an auth change, a layout change, a block
+  // — than by the roles actually disappearing. This is the guard that was
+  // missing when an /authwall misread archived the best roles in the pipeline
+  // one day at a time. Refuse the batch and make a human look.
+  const decided = closed + open;
+  const closedRate = decided > 0 ? closed / decided : 0;
+  if (!DRY_RUN && decided >= MIN_SAMPLE_FOR_GUARD && closedRate > MAX_CLOSED_RATE) {
+    console.error(`\n✗ ABORTED — ${closed}/${decided} (${Math.round(closedRate * 100)}%) came back closed, above the ${Math.round(MAX_CLOSED_RATE * 100)}% ceiling.`);
+    console.error(`  Jobs do not close at that rate. This is far more likely an auth or layout change.`);
+    console.error(`  Nothing was written. Re-run with DRY_RUN=true and read the reasons before overriding.`);
+    process.exit(1);
+  }
+
+  if (!DRY_RUN) {
+    for (const { job } of toClose) {
+      const { error: updateErr } = await supabase
+        .from('jobs')
+        .update({ status: 'closed' })
+        .eq('id', job.id);
+      if (updateErr) {
+        console.error(`    ✗ Supabase update failed for ${job.id}: ${updateErr.message}`);
+        failed++;
+      }
+    }
   }
 
   console.log(`\n── Summary`);
