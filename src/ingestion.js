@@ -14,7 +14,7 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-import { computeFit } from "./scoring.js";
+import { computeFit, shouldAutoPass } from "./scoring.js";
 import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -752,9 +752,16 @@ export async function runJobIngestion(
       if (evaluation) {
         evaluatedCount++;
         log(`  ✓ Evaluated: "${job.title}" — score ${evaluation.overall_score}`);
-        if (evaluation.recommendation === "skip" || evaluation.overall_score < 55) {
+        // Hide ONLY on a structural disqualifier, never on a borderline score.
+        // See shouldAutoPass() in scoring.js — the old `score < 55` rule buried
+        // 87% of the pipeline when the comp model was misreading base as TC.
+        const autoPass = shouldAutoPass(evaluation.fit);
+        if (autoPass.pass) {
           await supabaseClient.from("jobs").update({ status: "pass" }).eq("id", insertedJob.id);
-          log(`  → Auto-passed (score ${evaluation.overall_score}, ${evaluation.recommendation})`);
+          log(`  → Auto-passed (${autoPass.reason}, score ${evaluation.overall_score})`);
+        } else if (evaluation.overall_score < 55) {
+          // Kept visible on purpose — ranking handles it, hiding does not.
+          log(`  → Low score ${evaluation.overall_score} but left visible (${autoPass.reason})`);
         }
       }
     }

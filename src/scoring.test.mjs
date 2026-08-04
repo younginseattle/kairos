@@ -9,7 +9,7 @@
  * Run:  node src/scoring.test.mjs
  */
 
-import { computeFit, scoreBand, MODEL_VERSION } from "./scoring.js";
+import { computeFit, scoreBand, MODEL_VERSION, shouldAutoPass, MIN_AUTOPASS_CONFIDENCE } from "./scoring.js";
 import { getCompanyFacts, COMPANY_COUNT } from "./companyFacts.js";
 
 let passed = 0, failed = 0;
@@ -150,6 +150,58 @@ for (const [key, c] of Object.entries(CASES)) {
   console.log(`  SCORE ${r.score}  confidence ${r.confidence}%  band: ${r.band.label}`);
   inRange(`  ${key} score`, r.score, c.targetLo, c.targetHi);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO-PASS — the only place the pipeline hides a job
+// ═══════════════════════════════════════════════════════════════
+
+const strongRole = {
+  domain: { primary: "non_interchangeable", secondary: null },
+  titleBand: "target",
+  nonInterchangeableMatches: [{ proof: "telemetry_econ", strength: "direct" }],
+  locationPosture: "remote", knownGaps: [], jdChars: 5000,
+};
+
+// The exact shape that buried 943 rows: an uncurated company quoting a base.
+// Even scoring low it must stay VISIBLE — a score is not a structural fact.
+const uncuratedLowComp = computeFit({ ...strongRole, company: "Nobody Curated Inc", statedBase: 180 });
+check("a low-scoring role is no longer hidden on score alone",
+  !shouldAutoPass(uncuratedLowComp).pass,
+  `score ${uncuratedLowComp.score}, ${shouldAutoPass(uncuratedLowComp).reason}`);
+
+// Structural disqualifiers still hide — no recalibration reverses them.
+const cpoRole = computeFit({ ...strongRole, company: "Datadog", titleBand: "org_owner" });
+check("an org-owner role IS auto-passed (outside target level band)",
+  shouldAutoPass(cpoRole).pass, shouldAutoPass(cpoRole).reason);
+
+const seniorPmRole = computeFit({ ...strongRole, company: "Datadog", titleBand: "below" });
+check("a Senior-PM-and-below role IS auto-passed",
+  shouldAutoPass(seniorPmRole).pass, shouldAutoPass(seniorPmRole).reason);
+
+const relocationRole = computeFit({ ...strongRole, company: "Datadog", locationPosture: "office_relocation" });
+check("a relocation-required role IS auto-passed",
+  shouldAutoPass(relocationRole).pass, shouldAutoPass(relocationRole).reason);
+
+// A comp gate is a calibration artefact, not a structural fact — must not hide.
+const compGated = computeFit({ ...strongRole, company: "Nobody Curated Inc", statedBase: 120 });
+check("the sub-$300K comp gate does NOT trigger auto-pass",
+  compGated.gates.some(g => g.reason.includes("$300K")) && !shouldAutoPass(compGated).pass,
+  `score ${compGated.score}, gates ${JSON.stringify(compGated.gates.map(g => g.reason))}`);
+
+// Never hide on evidence we do not trust.
+const thinJdBelowBand = computeFit({ ...strongRole, company: "Datadog", titleBand: "below", jdChars: 120 });
+check("a thin JD is never auto-passed, even with a structural gate",
+  thinJdBelowBand.confidence < MIN_AUTOPASS_CONFIDENCE && !shouldAutoPass(thinJdBelowBand).pass,
+  `confidence ${thinJdBelowBand.confidence}%`);
+
+const garbage = computeFit({ ...strongRole, company: "Datadog", domain: { primary: "???" }, titleBand: "???" });
+check("a malformed extraction is never auto-passed",
+  !shouldAutoPass(garbage).pass,
+  `confidence ${garbage.confidence}%, ${shouldAutoPass(garbage).reason}`);
+
+check("shouldAutoPass tolerates a missing fit result",
+  !shouldAutoPass(null).pass && !shouldAutoPass(undefined).pass);
+
 
 console.log("\n" + "=".repeat(76));
 console.log("ORDERING + INVARIANTS");
