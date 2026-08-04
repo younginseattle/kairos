@@ -848,6 +848,14 @@ function ScoreBar({ label, score, compact = false }) {
 // LinkedIn cannot be checked from the browser (CORS blocked)
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Statuses meaning you are IN PROCESS with a company. Nothing automated may
+ * change a row in one of these — not the closed-listing sweep, not scoring, not
+ * ingestion. These represent real-world state that the app cannot re-derive:
+ * if it is overwritten, the fact that you were interviewing is simply gone.
+ */
+const ENGAGED_STATUSES = new Set(["applied", "interviewing", "offer", "rejected"]);
+
 function parseJobUrlForCheck(url) {
   if (!url) return null;
   let m = url.match(/greenhouse\.io\/([^/?#]+)\/jobs\/(\d+)/);
@@ -1719,8 +1727,15 @@ async function doQuickScore(job) {
     if (checkRunning) return;
     setCheckRunning(true);
     setCheckSummary(null);
+    // Never touch a role you are IN PROCESS on. A company taking its public
+    // posting down mid-process is the normal case — the req gets closed once
+    // they have a pipeline — and says nothing about your candidacy. This check
+    // previously ran against every non-pass, non-closed row, so a BMC role at
+    // 'interviewing' whose Greenhouse posting 404'd was flipped to 'closed',
+    // hidden from the Saved tab, and the fact that it was ever 'interviewing'
+    // was overwritten (restore puts rows back to 'new', not to what they were).
     const candidates = supabaseJobs.filter(j =>
-      j.status !== "pass" && j.status !== "closed" && j.url
+      !ENGAGED_STATUSES.has(j.status) && j.status !== "pass" && j.status !== "closed" && j.url
     );
     let checked = 0, closed = 0, skipped = 0, inconclusive = 0;
     const BATCH = 5;
@@ -1736,7 +1751,12 @@ async function doQuickScore(job) {
           return;
         }
         checked++;
-        if (!result.open) { closed++; await handleStatusChange(job.id, "closed"); }
+        // Belt and braces: even if the candidate filter above ever regresses,
+        // an in-process role must not be archived by automation.
+        if (!result.open && !ENGAGED_STATUSES.has(job.status)) {
+          closed++;
+          await handleStatusChange(job.id, "closed");
+        }
       }));
     }
     setCheckRunning(false);
