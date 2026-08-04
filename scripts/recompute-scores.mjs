@@ -14,21 +14,24 @@
  *   node --env-file=.env scripts/recompute-scores.mjs --restore-passed
  *
  * --dry-run          compute and print, write nothing
- * --restore-passed   also flip auto-passed rows back to 'new' when the new
- *                    score clears the threshold that hid them (see below)
+ * --restore-passed   also flip historically auto-passed rows back to 'new'
+ *                    when the CURRENT rule (shouldAutoPass) would not hide them
  */
 
 import ws from 'ws';
 globalThis.WebSocket = ws;
 const { createClient } = await import('@supabase/supabase-js');
-const { computeFit, MODEL_VERSION } = await import('../src/scoring.js');
+const { computeFit, MODEL_VERSION, shouldAutoPass } = await import('../src/scoring.js');
 const { extractionToSignals } = await import('../src/fitPrompt.js');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const RESTORE = process.argv.includes('--restore-passed');
 
-// ingestion.js hides a job with: recommendation === 'skip' || overall_score < 55
-const AUTO_PASS_THRESHOLD = 55;
+// The OLD ingestion rule, used only to RECOGNISE historical auto-passes:
+//   recommendation === 'skip' || overall_score < 55
+// Whether a row should STAY hidden is decided by the current rule,
+// shouldAutoPass(), which fires on structural disqualifiers rather than a score.
+const LEGACY_AUTO_PASS_THRESHOLD = 55;
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
@@ -86,12 +89,14 @@ for (const job of withExtraction) {
     // Only rows the AUTO-pass rule would have hidden are restore candidates.
     // A job manually passed at a healthy score is left alone.
     const looksAutoPassed = job.status === 'pass' &&
-      (job.recommendation === 'skip' || (before != null && before < AUTO_PASS_THRESHOLD));
+      (job.recommendation === 'skip' || (before != null && before < LEGACY_AUTO_PASS_THRESHOLD));
+    const stillHides = shouldAutoPass(fit);
     rows.push({
       id: job.id, title: job.title, company: job.company,
       before, after: fit.score, delta: before != null ? fit.score - before : null,
       status: job.status, looksAutoPassed,
-      restore: looksAutoPassed && fit.score >= AUTO_PASS_THRESHOLD,
+      restore: looksAutoPassed && !stillHides.pass,
+      keptReason: stillHides.reason,
       fit,
     });
   } catch (err) {
@@ -152,8 +157,13 @@ const wouldRestore = rows.filter(r => r.restore);
 console.log('\n' + '='.repeat(92));
 console.log('AUTO-PASSED BACKLOG');
 console.log('='.repeat(92));
-console.log(`  ${candidates.length} row(s) look auto-passed (status=pass and were under the ${AUTO_PASS_THRESHOLD} line)`);
-console.log(`  ${wouldRestore.length} of those now score >= ${AUTO_PASS_THRESHOLD} and ${RESTORE ? 'were restored to' : 'WOULD be restored to'} 'new'`);
+console.log(`  ${candidates.length} row(s) look auto-passed (status=pass, hidden under the legacy <${LEGACY_AUTO_PASS_THRESHOLD} rule)`);
+console.log(`  ${wouldRestore.length} of those have no structural disqualifier and ${RESTORE ? 'were restored to' : 'WOULD be restored to'} 'new'`);
+const stayHidden = candidates.filter(r => !r.restore);
+console.log(`  ${stayHidden.length} stay hidden — structurally out of scope:`);
+const byReason = {};
+stayHidden.forEach(r => { byReason[r.keptReason] = (byReason[r.keptReason] || 0) + 1; });
+for (const [reason, n] of Object.entries(byReason)) console.log(`      ${String(n).padStart(4)}  ${reason}`);
 if (!RESTORE && wouldRestore.length) console.log(`  → re-run with --restore-passed to un-hide them`);
 
 console.log(`\n  ${written} row(s) written, ${restored} restored, ${failed} failed${DRY_RUN ? '  [DRY RUN — nothing written]' : ''}\n`);

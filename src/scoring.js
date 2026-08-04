@@ -408,6 +408,54 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
 }
 
 // ─────────────────────────────────────────────────────────────────
+// AUTO-PASS — the only place the pipeline HIDES a job
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Ingestion used to hide anything scoring under 55. That rule turned a scoring
+ * bug into an invisible one: when the comp model read a stated base as if it
+ * were total comp, every uncurated company quoting a salary landed at ~54 and
+ * was filed away. 943 of 1083 rows — 87% of the pipeline — ended up hidden, and
+ * because hiding is silent the symptom was "the app is missing jobs", not "the
+ * comp model is wrong".
+ *
+ * The lesson is not "pick a better threshold". It is that a numeric score is the
+ * wrong trigger for a destructive action, because the score is exactly the thing
+ * a model change moves. So auto-pass now fires only on STRUCTURAL disqualifiers
+ * — facts about the role that no recalibration of domain, comp or evidence
+ * weighting can reverse:
+ *
+ *   - outside target level band — a Senior PM, CPO, or engineering role. This is
+ *     what the job IS, not how well it scores.
+ *   - relocation required — he is not moving. Stated in the profile as
+ *     non-negotiable.
+ *
+ * Everything else stays visible and is handled by ranking. The Saved tab already
+ * sorts by score and dims sub-60 rows, which is the non-destructive version of
+ * the same intent.
+ *
+ * Confidence gates the whole thing: hiding a job on the strength of an
+ * extraction we do not trust is how a thin JD or a malformed response becomes a
+ * permanently missing role.
+ */
+export const MIN_AUTOPASS_CONFIDENCE = 60;
+
+export const STRUCTURAL_PASS_REASONS = new Set([
+  "outside target level band",
+  "relocation required",
+]);
+
+export function shouldAutoPass(fit) {
+  if (!fit) return { pass: false, reason: "no fit result" };
+  if (fit.confidence < MIN_AUTOPASS_CONFIDENCE) {
+    return { pass: false, reason: `confidence ${fit.confidence}% below ${MIN_AUTOPASS_CONFIDENCE}% — not confident enough to hide` };
+  }
+  const hit = (fit.gates || []).find(g => STRUCTURAL_PASS_REASONS.has(g.reason));
+  if (hit) return { pass: true, reason: hit.reason };
+  return { pass: false, reason: "no structural disqualifier" };
+}
+
+// ─────────────────────────────────────────────────────────────────
 // CONFIDENCE — driven by how much was actually parseable
 // ─────────────────────────────────────────────────────────────────
 
