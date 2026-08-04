@@ -44,10 +44,14 @@ const SUPABASE_URL  = process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY  = process.env.VITE_SUPABASE_ANON_KEY;
 const ANTHROPIC_KEY = process.env.VITE_ANTHROPIC_KEY || process.env.ANTHROPIC_API_KEY;
 
+// A dry run never calls Claude, so it must not demand a key to get started —
+// checking what a file would do is exactly when you haven't set one up yet.
+const NEEDS_KEY = !NO_SCORE && !DRY_RUN;
+
 const missing = [];
 if (!SUPABASE_URL) missing.push('VITE_SUPABASE_URL');
 if (!SUPABASE_KEY) missing.push('VITE_SUPABASE_ANON_KEY');
-if (!ANTHROPIC_KEY && !NO_SCORE) missing.push('VITE_ANTHROPIC_KEY (or ANTHROPIC_API_KEY) — or pass --no-score');
+if (!ANTHROPIC_KEY && NEEDS_KEY) missing.push('VITE_ANTHROPIC_KEY (or ANTHROPIC_API_KEY) — or pass --no-score');
 
 if (missing.length) {
   console.error('[run-bulk-import] Missing required env vars:');
@@ -72,6 +76,12 @@ if (rows.length === 0) {
   process.exit(1);
 }
 
+if (!ANTHROPIC_KEY && !NO_SCORE) {
+  console.warn('[run-bulk-import] No Anthropic key set — this dry run is fine, but the real run will need');
+  console.warn('[run-bulk-import] ANTHROPIC_API_KEY in .env, or --no-score to import without scoring.');
+  console.warn('');
+}
+
 console.log(`[run-bulk-import] Parsed ${rows.length} job row${rows.length === 1 ? '' : 's'} from ${file}`);
 console.log(`[run-bulk-import] ${new Date().toLocaleString()}`);
 console.log('');
@@ -80,7 +90,7 @@ console.log('');
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 try {
-  const result = await runBulkImport(supabase, NO_SCORE ? null : ANTHROPIC_KEY, rows, {
+  const result = await runBulkImport(supabase, NEEDS_KEY ? ANTHROPIC_KEY : null, rows, {
     source:            SOURCE,
     fetchDescriptions: !NO_FETCH,
     applyTitleFilter:  FILTER,
