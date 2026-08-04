@@ -86,13 +86,27 @@ function histogram(values, label) {
 // ── Main ──────────────────────────────────────────────────────────
 console.log(`\n◆ Rescore with ${MODEL_VERSION}${DRY_RUN ? '  [DRY RUN — no writes]' : ''}\n`);
 
-let query = supabase.from('jobs')
-  .select('id,title,company,location,description,score,fit_score,fit_model_version,comp_verified_tc,burden_verified')
-  .order('created_at', { ascending: false });
-if (ONLY_NEW) query = query.is('fit_model_version', null);
-if (LIMIT) query = query.limit(LIMIT);
+// PostgREST caps a single select at db-max-rows (1000 on Supabase) SILENTLY —
+// no error, no flag. The pipeline is already past that, so a bare select here
+// would quietly skip the oldest rows. Page unless an explicit --limit is set.
+const COLS = 'id,title,company,location,description,score,fit_score,fit_model_version,comp_verified_tc,burden_verified';
+const PAGE = 1000;
+async function loadJobs() {
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = supabase.from('jobs').select(COLS).order('created_at', { ascending: false });
+    if (ONLY_NEW) q = q.is('fit_model_version', null);
+    const take = LIMIT ? Math.min(PAGE, LIMIT - all.length) : PAGE;
+    const { data, error } = await q.range(from, from + take - 1);
+    if (error) return { data: null, error };
+    all.push(...(data || []));
+    if (!data || data.length < take) break;
+    if (LIMIT && all.length >= LIMIT) break;
+  }
+  return { data: all, error: null };
+}
 
-const { data: jobs, error } = await query;
+const { data: jobs, error } = await loadJobs();
 if (error) { console.error('✗ Supabase read failed:', error.message); process.exit(1); }
 console.log(`  ${jobs.length} job(s) to process\n`);
 
