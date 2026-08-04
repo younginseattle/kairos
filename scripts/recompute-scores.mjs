@@ -18,8 +18,13 @@
  *                    when the CURRENT rule (shouldAutoPass) would not hide them
  */
 
-import ws from 'ws';
-globalThis.WebSocket = ws;
+// Supabase's realtime client wants a global WebSocket. Node 22 has one natively;
+// older runtimes do not. Shim only when it is missing, and do not hard-depend on
+// `ws` — it is not a declared dependency, it only resolves transitively through
+// @supabase/supabase-js today, so a hoisting or version change would break this.
+if (typeof globalThis.WebSocket === 'undefined') {
+  try { globalThis.WebSocket = (await import('ws')).default; } catch { /* realtime unused here */ }
+}
 const { createClient } = await import('@supabase/supabase-js');
 const { computeFit, MODEL_VERSION, shouldAutoPass } = await import('../src/scoring.js');
 const { extractionToSignals } = await import('../src/fitPrompt.js');
@@ -158,12 +163,12 @@ console.log('\n' + '='.repeat(92));
 console.log('AUTO-PASSED BACKLOG');
 console.log('='.repeat(92));
 console.log(`  ${candidates.length} row(s) look auto-passed (status=pass, hidden under the legacy <${LEGACY_AUTO_PASS_THRESHOLD} rule)`);
-console.log(`  ${wouldRestore.length} of those have no structural disqualifier and ${RESTORE ? 'were restored to' : 'WOULD be restored to'} 'new'`);
+console.log(`  ${wouldRestore.length} of those have no structural disqualifier and ${RESTORE && !DRY_RUN ? 'were restored to' : 'WOULD be restored to'} 'new'`);
 const stayHidden = candidates.filter(r => !r.restore);
 console.log(`  ${stayHidden.length} stay hidden — structurally out of scope:`);
 const byReason = {};
 stayHidden.forEach(r => { byReason[r.keptReason] = (byReason[r.keptReason] || 0) + 1; });
 for (const [reason, n] of Object.entries(byReason)) console.log(`      ${String(n).padStart(4)}  ${reason}`);
-if (!RESTORE && wouldRestore.length) console.log(`  → re-run with --restore-passed to un-hide them`);
+if ((!RESTORE || DRY_RUN) && wouldRestore.length) console.log(`  → re-run with --restore-passed to un-hide them`);
 
 console.log(`\n  ${written} row(s) written, ${restored} restored, ${failed} failed${DRY_RUN ? '  [DRY RUN — nothing written]' : ''}\n`);

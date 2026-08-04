@@ -1,0 +1,50 @@
+name: Recompute Fit Scores
+
+# Replays the current scoring model over every job that already has a stored
+# extraction. Costs nothing — scoring v2 separates the paid Claude extraction
+# from the free deterministic arithmetic, and the extraction is persisted in
+# fit_detail.extraction, so a model change can be replayed offline.
+#
+# Run with dry_run = true first. It writes nothing and prints what WOULD change.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — compute and print, write nothing'
+        type: boolean
+        default: true
+      restore_passed:
+        description: "Also un-hide auto-passed jobs the current rule would not hide (flips status 'pass' back to 'new')"
+        type: boolean
+        default: false
+
+jobs:
+  recompute:
+    name: Replay scoring over stored extractions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Recompute
+        env:
+          VITE_SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ inputs.restore_passed }}" = "true" ]; then ARGS="$ARGS --restore-passed"; fi
+          echo "Running: node scripts/recompute-scores.mjs $ARGS"
+          node scripts/recompute-scores.mjs $ARGS
