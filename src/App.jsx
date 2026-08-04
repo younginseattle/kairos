@@ -657,6 +657,31 @@ async function callClaude({ apiKey, system, userMessage, maxTokens = 1500, tempe
 }
 
 async function generateSearchPlan({ apiKey, profile }) { return callClaude({ apiKey, system: SEARCH_PLAN_PROMPT, userMessage: `CANDIDATE PROFILE:\n${profile}`, maxTokens: 2500 }); }
+/**
+ * Load the whole `jobs` table.
+ *
+ * A bare .select('*') is capped by PostgREST's `db-max-rows` (1000 on Supabase
+ * by default). The cap is applied SILENTLY — no error, no flag — so once the
+ * table passes it the app renders "the newest 1000 rows" and everything older
+ * simply stops existing as far as the UI is concerned. Page explicitly instead,
+ * and report the count so a short read is visible rather than assumed complete.
+ */
+const JOBS_PAGE_SIZE = 1000;
+export async function fetchAllJobs() {
+  const all = [];
+  for (let from = 0; ; from += JOBS_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(from, from + JOBS_PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    all.push(...(data || []));
+    if (!data || data.length < JOBS_PAGE_SIZE) break;
+  }
+  return { data: all, error: null };
+}
+
 /** The four v2 columns, in the shape the `jobs` table and enrichJob() expect. */
 export function fitColumns(fit) {
   return {
@@ -835,7 +860,16 @@ async function checkJobIsOpen(url) {
     const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(apiUrl, { signal: controller.signal });
     clearTimeout(timer);
-    return { open: res.ok, reason: res.ok ? "open" : String(res.status) };
+    if (res.ok) return { open: true, reason: "open" };
+    // ONLY a 404/410 means the posting is gone. Everything else — 403 from a
+    // locked board, 429 from rate limiting, any 5xx — says something about the
+    // request, not about the job. Treating `!res.ok` as "closed" meant one
+    // throttled sweep could bulk-archive live roles, and closed rows are hidden
+    // from the pipeline, so they disappear without ever being wrong on screen.
+    // This check runs 5-wide across the whole pipeline, which is exactly the
+    // shape of traffic that earns a 429.
+    if (res.status === 404 || res.status === 410) return { open: false, reason: String(res.status) };
+    return { open: null, reason: `http_${res.status}` };
   } catch {
     return { open: null, reason: "error" };
   }
@@ -1428,7 +1462,7 @@ export default function JobSearchAgent() {
   useEffect(() => {
     async function load() {
       setSupabaseLoading(true);
-      const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+      const { data, error } = await fetchAllJobs();
       if (error) { console.error(error); setSupabaseError(error.message); }
       else setSupabaseJobs(data || []);
       setSupabaseLoading(false);
@@ -1677,7 +1711,7 @@ async function doQuickScore(job) {
     const candidates = supabaseJobs.filter(j =>
       j.status !== "pass" && j.status !== "closed" && j.url
     );
-    let checked = 0, closed = 0, skipped = 0;
+    let checked = 0, closed = 0, skipped = 0, inconclusive = 0;
     const BATCH = 5;
     for (let i = 0; i < candidates.length; i += BATCH) {
       const batch = candidates.slice(i, i + BATCH);
@@ -1685,13 +1719,17 @@ async function doQuickScore(job) {
       await Promise.all(batch.map(async job => {
         const result = await checkJobIsOpen(job.url);
         setCheckingJobIds(prev => { const n = new Set(prev); n.delete(job.id); return n; });
-        if (result.open === null) { if (result.reason === "linkedin") skipped++; return; }
+        if (result.open === null) {
+          if (result.reason === "linkedin") skipped++;
+          else if (result.reason !== "unsupported") inconclusive++;
+          return;
+        }
         checked++;
         if (!result.open) { closed++; await handleStatusChange(job.id, "closed"); }
       }));
     }
     setCheckRunning(false);
-    setCheckSummary({ checked, closed, skipped, total: candidates.length });
+    setCheckSummary({ checked, closed, skipped, inconclusive, total: candidates.length });
   }
 
   async function doBulkDelete() {
@@ -1716,7 +1754,7 @@ async function doQuickScore(job) {
     try {
       const result = await runJobIngestion(supabase, anthropicKey, profile);
       setIngestResult(result);
-      const { data } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+      const { data } = await fetchAllJobs();
       if (data) setSupabaseJobs(data);
     } catch (e) { setIngestError(`Discovery failed: ${e.message}`); }
     setIngestRunning(false);
@@ -1934,7 +1972,7 @@ async function doQuickScore(job) {
 
   async function doRefreshSupabase() {
     setSupabaseLoading(true);
-    const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+    const { data, error } = await fetchAllJobs();
     if (error) setSupabaseError(error.message); else setSupabaseJobs(data || []);
     setSupabaseLoading(false);
   }
@@ -2659,7 +2697,7 @@ async function doQuickScore(job) {
           )}
           {checkSummary && (
             <div style={{ marginBottom: 10, padding: "8px 12px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 6, fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>🔍 Checked {checkSummary.checked} job{checkSummary.checked !== 1 ? "s" : ""}{checkSummary.closed > 0 ? ` · ${checkSummary.closed} closed` : " · all open"}{checkSummary.skipped > 0 ? ` · ${checkSummary.skipped} LinkedIn (manual check)` : ""}</span>
+              <span>🔍 Checked {checkSummary.checked} job{checkSummary.checked !== 1 ? "s" : ""}{checkSummary.closed > 0 ? ` · ${checkSummary.closed} closed` : " · all open"}{checkSummary.skipped > 0 ? ` · ${checkSummary.skipped} LinkedIn (manual check)` : ""}{checkSummary.inconclusive > 0 ? ` · ${checkSummary.inconclusive} unreachable (left as-is)` : ""}</span>
               <button onClick={() => setCheckSummary(null)} style={{ background: "none", border: "none", cursor: "pointer", color: T.textMuted, fontFamily: T.fontMono, fontSize: 9, padding: 0 }}>✕</button>
             </div>
           )}

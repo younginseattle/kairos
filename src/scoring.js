@@ -260,11 +260,21 @@ export function scoreCompensation({ statedTc = null, statedBase = null, statedVa
     // a ~$209K base scored comp 28 and tripped the sub-$300K gate — a gate meant
     // for genuinely low-paying roles — when the real package is ~$350K.
     //
-    // Gross up ONLY when the company is in the facts table, so the cash share is
-    // a curated fact rather than a guess, and only when no variable comp was
-    // stated (a stated base+bonus pair is already a fuller picture). Unknown
-    // companies keep the conservative base-as-TC reading.
-    if (companyFacts && statedVariable == null) {
+    // This used to gross up ONLY for companies in the facts table, on the
+    // reasoning that an uncurated cash share would be a guess. That was the
+    // wrong call: declining to gross up is not "no guess", it is the implicit
+    // guess that cash share = 100%, i.e. that base IS total comp. That guess is
+    // wrong in a known direction on essentially every US posting, and it
+    // compounded — base < $300K tripped the sub-$300K gate, ceiling 55 put the
+    // role at ~54, and ingestion auto-passes anything under 55 into a hidden
+    // status. The net effect was that an uncurated company quoting its salary
+    // got buried while the identical role at a curated company scored 90, and
+    // quoting no salary at all scored better than quoting one.
+    //
+    // So gross up either way, using the curated cash share when we have it and a
+    // conservative 0.70 default when we do not. Confidence already drops for an
+    // unknown company, and the note below says which share was used.
+    if (statedVariable == null) {
       tc = tc / cashShareFor(companyFacts);
       grossedUp = true;
     }
@@ -298,7 +308,8 @@ export function scoreCompensation({ statedTc = null, statedBase = null, statedVa
     const src = reinterpretedAsBase
       ? `quoted ~$${Math.round(statedBase)}K read as base (postings quote base, not TC)`
       : `stated base ~$${Math.round(statedBase)}K`;
-    noteBits.push(`${src} grossed up to ~$${Math.round(tc)}K TC (${Math.round(cashShare * 100)}% cash at this company)`);
+    const shareSrc = companyFacts ? "at this company" : "assumed — company not in facts table";
+    noteBits.push(`${src} grossed up to ~$${Math.round(tc)}K TC (${Math.round(cashShare * 100)}% cash, ${shareSrc})`);
   } else {
     noteBits.push(`${estimated ? "estimated" : "stated"} TC ~$${Math.round(tc)}K`);
   }
@@ -533,7 +544,9 @@ export function computeFit(signals) {
   // A TC derived from a stated base is weaker evidence than a stated TC. Say so
   // rather than presenting the grossed-up figure as if it were quoted.
   if (c.grossedUp) {
-    reasons.push("total comp inferred from stated base — verify before treating comp as settled");
+    reasons.push(facts
+      ? "total comp inferred from stated base — verify before treating comp as settled"
+      : "total comp inferred from stated base using a DEFAULT cash share — company is not in the facts table, so this is the weakest comp read the model produces");
   }
 
   return {
