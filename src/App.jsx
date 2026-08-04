@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient'
 import { computeFit, scoreBand } from "./scoring.js";
 import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
 import { runJobIngestion, SOURCES, isRelevantJob } from './ingestion.js'
+import { parseJobRows } from './bulkImport.js'
 import NetworkView from './NetworkView.jsx'
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1579,19 +1580,31 @@ export default function JobSearchAgent() {
     if (!raw) return;
 
     let parsed = [];
+    let isTable = false;
     try {
       const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/, "").trim();
       parsed = JSON.parse(clean);
       if (!Array.isArray(parsed)) throw new Error("Expected a JSON array");
     } catch {
-      setEmailError("Couldn't parse JSON — paste the full JSON array from your Claude summary.");
-      return;
+      // Not JSON — try a pasted table (spreadsheet copy, CSV, markdown table).
+      // Same parser the bulk-import CLI uses, so both paths accept the same files.
+      parsed = parseJobRows(raw);
+      isTable = parsed.length > 0;
+      if (!isTable) {
+        setEmailError("Couldn't parse that. Paste a JSON array from your Claude summary, or a table with title and url columns (CSV, TSV, or copied straight out of a spreadsheet).");
+        return;
+      }
     }
 
     // Use broadFilter — this is a curated list from Claude, not raw ATS noise.
     // broadFilter accepts any title with a seniority signal + "product":
     // senior, staff, principal, director, lead, head, group, vp, manager.
-    const relevant = parsed.filter(j => j.title && j.url && isRelevantJob(j, { broadFilter: true }));
+    //
+    // A pasted table skips the title filter entirely: it comes from a sheet a
+    // human already ranked, and the filter would silently drop real roles from
+    // it — anything containing "security", and every "Sr." that isn't spelled
+    // "Senior". Scoring still sorts them out.
+    const relevant = parsed.filter(j => j.title && j.url && (isTable || isRelevantJob(j, { broadFilter: true })));
 
     if (relevant.length === 0) {
       setEmailError(`No relevant roles found after filtering (${parsed.length} total parsed). Jobs must include a seniority signal + "product" in the title.`);
@@ -2299,14 +2312,14 @@ async function doQuickScore(job) {
             <>
               <Card>
                 <div style={{ fontFamily: T.fontSans, fontSize: 12, color: T.textMuted, lineHeight: 1.7, marginBottom: 14 }}>
-                  Paste the JSON summary from your daily Claude briefing. Jobs will be filtered for relevant titles, deduplicated against your pipeline, then added to the staging list below for scoring.
+                  Paste the JSON summary from your daily Claude briefing, or a table of roles copied straight out of a spreadsheet (CSV, TSV, or markdown — it needs a header row with title and url columns). Jobs are deduplicated against your pipeline, then added to the staging list below for scoring. For a whole file at once, use <span style={{ fontFamily: T.fontMono }}>node --env-file=.env src/run-bulk-import.mjs &lt;file&gt;</span>.
                 </div>
                 <textarea
                   className="jsa-textarea"
                   style={{ height: 140, marginBottom: 10 }}
                   value={emailPaste}
                   onChange={e => setEmailPaste(e.target.value)}
-                  placeholder={'Paste JSON array from Claude summary:\n[\n  { "title": "...", "company": "...", "location": "...", "url": "..." },\n  ...\n]'}
+                  placeholder={'Paste a JSON array from a Claude summary:\n[\n  { "title": "...", "company": "...", "location": "...", "url": "..." },\n  ...\n]\n\n…or paste spreadsheet rows:\nTitle\tCompany\tLocation\tURL'}
                 />
                 <Btn primary onClick={doImportJsonJobs} disabled={!emailPaste.trim()}>Import Jobs →</Btn>
                 <ErrBox msg={emailError} />
