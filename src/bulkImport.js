@@ -263,16 +263,36 @@ async function fetchGreenhouseDescription(url) {
   return htmlToText(json.content || "");
 }
 
-/** jobs.ashbyhq.com/{org}/{uuid} → the public posting API for that org. */
+/**
+ * Ashby postings, whether served from jobs.ashbyhq.com/{org}/{uuid} or from a
+ * company's own domain (careers.confluent.io/jobs/job/{uuid}). The custom
+ * domains front the same board, and scraping them gets you throttled —
+ * Confluent 429s every request, retries included — while the API answers
+ * fine. So: pull the UUID from anywhere in the URL and try the org names the
+ * hostname suggests.
+ */
 async function fetchAshbyDescription(url) {
-  const m = /ashbyhq\.com\/([^/?#]+)\/([0-9a-f-]{36})/i.exec(url);
-  if (!m) return "";
-  const [, org, id] = m;
-  const body = await fetchText(`https://api.ashbyhq.com/posting-api/job-board/${org}?includeCompensation=true`);
-  const json = JSON.parse(body);
-  const posting = (json.jobs || []).find(j => j.id === id || j.jobUrl?.includes(id));
-  if (!posting) return "";
-  return htmlToText(posting.descriptionHtml || posting.descriptionPlain || "");
+  const idMatch = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(url);
+  if (!idMatch) return "";
+  const id = idMatch[1];
+
+  const orgs = [];
+  const direct = /ashbyhq\.com\/([^/?#]+)\//i.exec(url);
+  if (direct) orgs.push(direct[1]);
+  try {
+    // careers.confluent.io → try "confluent"; jobs.acme.com → "acme".
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    const labels = host.split(".").filter(l => !["careers", "jobs", "job", "com", "io", "ai", "co", "net"].includes(l));
+    if (labels.length) orgs.push(labels[labels.length - 1], labels[0]);
+  } catch { /* not a parseable URL — the direct match is all we have */ }
+
+  for (const org of [...new Set(orgs)]) {
+    const body = await fetchText(`https://api.ashbyhq.com/posting-api/job-board/${org}?includeCompensation=true`);
+    const json = JSON.parse(body);
+    const posting = (json.jobs || []).find(j => j.id === id || j.jobUrl?.includes(id));
+    if (posting) return htmlToText(posting.descriptionHtml || posting.descriptionPlain || "");
+  }
+  return "";
 }
 
 /**
@@ -283,7 +303,9 @@ export async function fetchJobDescription(url) {
   if (!url) return "";
   const strategies = [];
   if (/greenhouse\.io/i.test(url)) strategies.push(fetchGreenhouseDescription);
-  if (/ashbyhq\.com/i.test(url))   strategies.push(fetchAshbyDescription);
+  // Any URL carrying a UUID might be an Ashby board on a custom domain, so
+  // this runs before the scrape — the API is both cleaner and un-throttled.
+  if (/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(url)) strategies.push(fetchAshbyDescription);
   strategies.push(async u => htmlToText(await fetchText(u)));
 
   for (const strategy of strategies) {
@@ -302,6 +324,11 @@ export async function fetchJobDescription(url) {
  * short on purpose, so computeConfidence marks these rows low-confidence
  * rather than scoring a stub as if it were a full posting.
  */
+// Written into every stub, and the way --refetch later recognises a row that
+// still needs a real posting. Changing the wording means older stubs stop
+// being detected, so keep the marker itself stable.
+export const STUB_MARKER = "(No job description retrieved";
+
 export function describeFromRow(row) {
   const meta = Object.entries(row.extra || {})
     .map(([k, v]) => `${k}: ${v}`)
@@ -311,14 +338,71 @@ export function describeFromRow(row) {
     `Location: ${row.location}`,
     meta,
     "",
-    "(No job description retrieved — imported from a curated list. " +
+    `${STUB_MARKER} — imported from a curated list. ` +
     "Open the listing and paste the full JD in the Evaluate tab to rescore.)",
   ].filter(Boolean).join("\n");
+}
+
+/** True when a row is carrying a metadata stub rather than a real posting. */
+export function isStubDescription(description) {
+  return !description || description.includes(STUB_MARKER);
 }
 
 // ─────────────────────────────────────────────────────────────────
 // 3. PIPELINE
 // ─────────────────────────────────────────────────────────────────
+
+/**
+ * Backfills one row that is already in the pipeline but still holding a stub.
+ * Leaves rows with a real description alone — a JD you pasted by hand is
+ * better evidence than anything a scraper returns, and must not be clobbered.
+ */
+async function refetchStubRow(supabaseClient, anthropicApiKey, row, { dryRun, candidateProfile }) {
+  const { data, error } = await supabaseClient
+    .from("jobs")
+    .select("id, title, company, location, description, comp_verified_tc, burden_verified")
+    .eq("url", row.url)
+    .limit(1);
+
+  if (error)            return { status: "error",     detail: `lookup failed: ${error.message}` };
+  const existing = data?.[0];
+  if (!existing)        return { status: "duplicate", detail: "already in pipeline (different URL form)" };
+  if (!isStubDescription(existing.description)) {
+    return { status: "duplicate", detail: "already has a real JD" };
+  }
+
+  const description = await fetchJobDescription(row.url);
+  if (!description) {
+    log(`  · Still no JD — leaving stub: "${row.title}" at ${row.company}`);
+    return { status: "duplicate", detail: "still no JD available" };
+  }
+
+  if (dryRun) {
+    log(`  · [dry run] would backfill: "${row.title}" at ${row.company} — JD ${description.length} chars`);
+    return { refetched: true, status: "would-refetch", detail: `JD ${description.length} chars` };
+  }
+
+  const { error: updateError } = await supabaseClient
+    .from("jobs").update({ description }).eq("id", existing.id);
+  if (updateError) return { status: "error", detail: `update failed: ${updateError.message}` };
+  log(`  ✓ Backfilled JD: "${row.title}" at ${row.company} (${description.length} chars)`);
+
+  if (!anthropicApiKey) return { refetched: true, status: "refetched", detail: "not rescored (no API key)" };
+
+  const evaluation = await runClaudeEvaluation(
+    supabaseClient, { ...existing, description }, anthropicApiKey, candidateProfile,
+  );
+  if (!evaluation) return { refetched: true, status: "refetched", detail: "rescoring failed" };
+
+  const autoPass = shouldAutoPass(evaluation.fit);
+  if (autoPass.pass) {
+    await supabaseClient.from("jobs").update({ status: "pass" }).eq("id", existing.id);
+  }
+  return {
+    refetched: true, evaluated: true, status: "refetched",
+    detail: `rescored ${evaluation.overall_score} (confidence ${evaluation.confidence})${autoPass.pass ? ` — auto-passed: ${autoPass.reason}` : ""}`,
+  };
+}
 
 /**
  * Imports curated rows through the standard dedup + scoring path.
@@ -336,10 +420,15 @@ export function describeFromRow(row) {
  *        and only matches "Senior", never "Sr." — real roles on a curated
  *        list. Turn it on to hold an untrusted list to the same bar.
  * @param {boolean} [opts.dryRun=false]
+ * @param {boolean} [opts.refetchStubs=false]
+ *        Instead of skipping a row already in the pipeline, backfill it when
+ *        it is still carrying a stub: fetch the posting, write it to the
+ *        existing row, rescore. Without this a role that imported before its
+ *        board would answer stays a stub forever, since dedup skips it.
  * @param {string}  [opts.candidateProfile]
  * @param {function}[opts.onProgress]      — ({ index, total, row, status }) => void
  *
- * @returns {{ total, imported, skipped, evaluated, autoPassed, results }}
+ * @returns {{ total, imported, refetched, skipped, evaluated, autoPassed, withJd, stubbed, results }}
  */
 export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts = {}) {
   const {
@@ -347,6 +436,7 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
     fetchDescriptions = true,
     applyTitleFilter  = false,
     dryRun            = false,
+    refetchStubs      = false,
     candidateProfile,
     onProgress,
   } = opts;
@@ -355,7 +445,7 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
   log(`═══ Bulk import started — ${rows.length} row${rows.length === 1 ? "" : "s"} ═══`);
 
   const results = [];
-  let imported = 0, skipped = 0, evaluated = 0, autoPassed = 0;
+  let imported = 0, skipped = 0, evaluated = 0, autoPassed = 0, refetched = 0;
   let withJd = 0, stubbed = 0;
 
   const record = (row, status, detail = "") => {
@@ -381,8 +471,17 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
       continue;
     }
     if (duplicate) {
-      skipped++; record(row, "duplicate");
-      log(`  · Duplicate — skipping: "${row.title}" at ${row.company}`);
+      if (!refetchStubs) {
+        skipped++; record(row, "duplicate");
+        log(`  · Duplicate — skipping: "${row.title}" at ${row.company}`);
+        continue;
+      }
+      const outcome = await refetchStubRow(supabaseClient, anthropicApiKey, row, {
+        dryRun, candidateProfile,
+      });
+      if (outcome.refetched) { refetched++; withJd++; if (outcome.evaluated) evaluated++; }
+      else skipped++;
+      record(row, outcome.status, outcome.detail);
       continue;
     }
 
@@ -445,6 +544,7 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
   log("═══ Bulk import complete ═══");
   log(`  Rows:        ${rows.length}`);
   log(`  Imported:    ${imported}${dryRun ? " (dry run — nothing written)" : ""}`);
+  if (refetchStubs) log(`  Backfilled:  ${refetched}`);
   log(`  With JD:     ${withJd}`);
   log(`  Stub only:   ${stubbed}`);
   log(`  Skipped:     ${skipped}`);
@@ -452,5 +552,5 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
   log(`  Auto-passed: ${autoPassed}`);
   log(`  Time:        ${elapsed}s`);
 
-  return { total: rows.length, imported, skipped, evaluated, autoPassed, withJd, stubbed, results };
+  return { total: rows.length, imported, refetched, skipped, evaluated, autoPassed, withJd, stubbed, results };
 }

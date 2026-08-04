@@ -14,6 +14,8 @@
  *   --no-fetch       skip job-description fetching (much faster, lower confidence)
  *   --no-score       insert without calling Claude
  *   --filter         apply the ATS title filter (off by default — see bulkImport.js)
+ *   --refetch        backfill rows already in the pipeline that are still
+ *                    carrying a metadata stub, then rescore them
  *   --source=NAME    value written to jobs.source (default: manual)
  *
  * Requires Node 20.6+ for --env-file.
@@ -29,7 +31,7 @@ const args = process.argv.slice(2);
 const file = args.find(a => !a.startsWith('--'));
 
 if (!file) {
-  console.error('Usage: node --env-file=.env src/run-bulk-import.mjs <file.csv> [--dry-run] [--no-fetch] [--no-score] [--filter] [--source=NAME]');
+  console.error('Usage: node --env-file=.env src/run-bulk-import.mjs <file.csv> [--dry-run] [--no-fetch] [--no-score] [--filter] [--refetch] [--source=NAME]');
   process.exit(1);
 }
 
@@ -37,6 +39,7 @@ const DRY_RUN   = args.includes('--dry-run');
 const NO_FETCH  = args.includes('--no-fetch');
 const NO_SCORE  = args.includes('--no-score');
 const FILTER    = args.includes('--filter');
+const REFETCH   = args.includes('--refetch');
 const SOURCE    = (args.find(a => a.startsWith('--source=')) || '--source=manual').split('=')[1];
 
 // ── Env ───────────────────────────────────────────────────────────
@@ -95,12 +98,14 @@ try {
     fetchDescriptions: !NO_FETCH,
     applyTitleFilter:  FILTER,
     dryRun:            DRY_RUN,
+    refetchStubs:      REFETCH,
   });
 
   console.log('');
   console.log('═══ BULK IMPORT SUMMARY ═══');
   console.log(`  Rows:        ${result.total}`);
   console.log(`  Imported:    ${result.imported}${DRY_RUN ? ' (dry run — nothing written)' : ''}`);
+  if (REFETCH) console.log(`  Backfilled:  ${result.refetched}`);
   console.log(`  With JD:     ${result.withJd}`);
   console.log(`  Stub only:   ${result.stubbed}`);
   console.log(`  Skipped:     ${result.skipped}`);

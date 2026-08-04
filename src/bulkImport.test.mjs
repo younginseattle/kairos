@@ -13,7 +13,7 @@
 
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { parseJobRows, describeFromRow, fetchJobDescription, runBulkImport } from "./bulkImport.js";
+import { parseJobRows, describeFromRow, fetchJobDescription, runBulkImport, isStubDescription } from "./bulkImport.js";
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -112,10 +112,15 @@ console.log("\nIMPORT PIPELINE");
 
 // Minimal stand-in for the Supabase client: supports the exact call shapes
 // isDuplicateJob() and insertJob() use, and records what was written.
-function fakeSupabase(existingUrls = []) {
+function fakeSupabase(existing = []) {
+  // `existing` may be plain URLs or full rows — a row lets a test control the
+  // description, which is what the --refetch path keys off.
+  const rows = existing.map((e, i) => (typeof e === "string" ? { id: `row-${i}`, url: e } : { id: `row-${i}`, ...e }));
   const inserted = [];
-  const client = {
+  const updates  = [];
+  return {
     inserted,
+    updates,
     from() {
       const q = {
         _url: null,
@@ -123,19 +128,21 @@ function fakeSupabase(existingUrls = []) {
         eq(col, val) { if (col === "url") q._url = val; return q; },
         ilike(_col, pattern) { q._url = pattern.replace(/%/g, ""); return q; },
         limit() {
-          const hit = existingUrls.some(u => q._url && u.includes(q._url));
-          return Promise.resolve({ data: hit ? [{ id: "existing" }] : [], error: null });
+          const hits = rows.filter(r => q._url && r.url.includes(q._url));
+          return Promise.resolve({ data: hits, error: null });
         },
         insert(row) {
           inserted.push(row);
           return { select: () => ({ single: () => Promise.resolve({ data: { id: `id-${inserted.length}`, ...row }, error: null }) }) };
         },
-        update() { return { eq: () => Promise.resolve({ error: null }) }; },
+        update(fields) {
+          updates.push(fields);
+          return { eq: () => Promise.resolve({ error: null }) };
+        },
       };
       return q;
     },
   };
-  return client;
 }
 
 const rows = [
@@ -163,6 +170,42 @@ check("status starts at new", db.inserted.every(r => r.status === "new"));
 const dryDb = fakeSupabase();
 const dry = await runBulkImport(dryDb, null, rows.slice(0, 1), { dryRun: true });
 check("dry run writes nothing", dryDb.inserted.length === 0 && dry.imported === 1);
+
+// ── Backfilling stubs (--refetch) ─────────────────────────────────
+console.log("\nREFETCH");
+
+check("a stub is recognised", isStubDescription(describeFromRow(csvRows[0])));
+check("a real posting is not", !isStubDescription("Responsibilities: own the roadmap…"));
+check("an empty description counts as a stub", isStubDescription(""));
+
+const stubRow = [{ title: "Staff PM", company: "Lambda", location: "Remote", url: `${base}/full`, description: "", extra: {} }];
+
+const stubDb = fakeSupabase([{ url: `${base}/full`, description: describeFromRow(stubRow[0]) }]);
+const backfill = await runBulkImport(stubDb, null, stubRow, { refetchStubs: true });
+check("a stubbed row in the pipeline is backfilled, not skipped",
+  backfill.refetched === 1 && backfill.results[0].status === "refetched");
+check("the backfill writes the real JD to the existing row",
+  stubDb.updates.some(u => u.description?.includes("observability platform roadmap")));
+check("the backfill updates rather than inserting a second row", stubDb.inserted.length === 0);
+
+const realDb = fakeSupabase([{ url: `${base}/full`, description: "A job description I pasted by hand, at length." }]);
+const noClobber = await runBulkImport(realDb, null, stubRow, { refetchStubs: true });
+check("a row that already has a real JD is left alone",
+  realDb.updates.length === 0 && noClobber.results[0].detail === "already has a real JD");
+
+const unreachableDb = fakeSupabase([{ url: `${base}/shell`, description: describeFromRow(stubRow[0]) }]);
+const stillStub = await runBulkImport(unreachableDb, null,
+  [{ ...stubRow[0], url: `${base}/shell` }], { refetchStubs: true });
+check("a row whose board still won't answer keeps its stub",
+  unreachableDb.updates.length === 0 && stillStub.results[0].detail === "still no JD available");
+
+const dryRefetchDb = fakeSupabase([{ url: `${base}/full`, description: describeFromRow(stubRow[0]) }]);
+await runBulkImport(dryRefetchDb, null, stubRow, { refetchStubs: true, dryRun: true });
+check("a dry-run backfill writes nothing", dryRefetchDb.updates.length === 0);
+
+check("without --refetch a stubbed duplicate is still skipped",
+  (await runBulkImport(fakeSupabase([{ url: `${base}/full`, description: describeFromRow(stubRow[0]) }]), null, stubRow, {}))
+    .results[0].status === "duplicate");
 
 const filtered = await runBulkImport(fakeSupabase(), null,
   [{ title: "Product Marketing Manager", company: "X", location: "Remote", url: "https://example.test/pmm", extra: {} }],
