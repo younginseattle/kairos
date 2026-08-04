@@ -682,8 +682,17 @@ export async function fetchAllJobs() {
   return { data: all, error: null };
 }
 
-/** The four v2 columns, in the shape the `jobs` table and enrichJob() expect. */
-export function fitColumns(fit) {
+/**
+ * The four v2 columns, in the shape the `jobs` table and enrichJob() expect.
+ *
+ * `extraction` is stored alongside the computed result on purpose: it is the
+ * expensive half (one Claude call) and the scoring half is pure arithmetic, so
+ * keeping it means a scoring-model change can be replayed over the whole
+ * pipeline offline for free. ingestion.js already did this; the in-app paths
+ * did not, which would have left rows scored in the browser needing a paid
+ * re-extraction to pick up a model change.
+ */
+export function fitColumns(fit, extraction = null) {
   return {
     fit_score:         fit.score,
     fit_confidence:    fit.confidence,
@@ -692,6 +701,7 @@ export function fitColumns(fit) {
       subscores: fit.subscores, explanations: fit.explanations,
       gates: fit.gates, gaps: fit.gaps, math: fit.math, band: fit.band,
       confidence_reasons: fit.confidence_reasons,
+      ...(extraction ? { extraction } : {}),
     },
   };
 }
@@ -725,7 +735,8 @@ async function runEvaluation({ apiKey, jd, profile, location, title = "", compan
     // branch. Without these the Evaluate tab fell through to the v1 path and
     // re-applied a client-side location penalty that the burden dimension had
     // already priced — the same role rendered 52 against a computed 54.
-    ...fitColumns(fit),
+    extraction,
+    ...fitColumns(fit, extraction),
     overall_score: fit.score,
     confidence:    fit.confidence,
     recommendation:
@@ -1546,7 +1557,7 @@ export default function JobSearchAgent() {
       confidence_score: result.confidence, missing_keywords: result.missing_keywords || [],
       strategic_gaps: result.strategic_gaps || [], score_explanation: result.score_explanation || null,
       top_candidate_signal: result.top_candidate_signal || null,
-      ...fitColumns(result.fit),
+      ...fitColumns(result.fit, result.extraction),
     };
     const { error } = await supabase.from('jobs').insert(fields);
     if (error) { console.error(error); return; }
@@ -1863,7 +1874,7 @@ async function doQuickScore(job) {
         strategic_gaps:          evalResult.strategic_gaps || [],
         score_explanation:       evalResult.score_explanation || null,
         top_candidate_signal:    evalResult.top_candidate_signal || null,
-        ...fitColumns(evalResult.fit),
+        ...fitColumns(evalResult.fit, evalResult.extraction),
       };
       if (manualJobId) {
         // Re-evaluating existing job — update the row
@@ -2005,7 +2016,7 @@ async function doQuickScore(job) {
         strategic_gaps:          result.strategic_gaps          || [],
         score_explanation:       result.score_explanation       || null,
         top_candidate_signal:    result.top_candidate_signal    || null,
-        ...fitColumns(result.fit),
+        ...fitColumns(result.fit, result.extraction),
       };
       const { error } = await supabase.from('jobs').update(fields).eq('id', job.id);
       if (error) throw new Error(error.message);
@@ -2069,7 +2080,7 @@ async function doQuickScore(job) {
           location_score:          ev.location_score,
           company_score:           ev.company_score,
           confidence_score:        ev.confidence,
-          ...fitColumns(fit),
+          ...fitColumns(fit, ev.extraction),
         }).eq('id', job.id);
 
         if (updateError) throw new Error(updateError.message);
@@ -2085,7 +2096,7 @@ async function doQuickScore(job) {
           work_life_balance_score: ev.work_life_balance_score,
           growth_score: ev.growth_score, location_score: ev.location_score,
           company_score: ev.company_score, confidence_score: ev.confidence,
-          ...fitColumns(fit),
+          ...fitColumns(fit, ev.extraction),
         } : j));
 
         succeeded++;
