@@ -14,8 +14,13 @@
  * --only-new  skip jobs already carrying a fit_model_version
  */
 
-import ws from 'ws';
-globalThis.WebSocket = ws;
+// Supabase's realtime client wants a global WebSocket. Node 22 has one natively;
+// older runtimes do not. Shim only when it is missing, and do not hard-depend on
+// `ws` — it is not a declared dependency, it only resolves transitively through
+// @supabase/supabase-js today, so a hoisting or version change would break this.
+if (typeof globalThis.WebSocket === 'undefined') {
+  try { globalThis.WebSocket = (await import('ws')).default; } catch { /* realtime unused here */ }
+}
 const { createClient } = await import('@supabase/supabase-js');
 
 const { computeFit, MODEL_VERSION } = await import('../src/scoring.js');
