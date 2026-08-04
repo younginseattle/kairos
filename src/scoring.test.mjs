@@ -246,11 +246,44 @@ check("gross-up clears the sub-$300K gate for a ~$209K base at Microsoft",
 check("gross-up is disclosed in confidence reasons, not presented as quoted",
   basedOnly.confidence_reasons.some(r => r.includes("inferred from stated base")));
 
-// Unknown company keeps the conservative reading — no guessed cash share.
+// An unknown company still grosses up, using the conservative 0.70 default.
+// Declining to gross up is not "no assumption" — it is the assumption that base
+// IS total comp, which is wrong on essentially every US posting and used to bury
+// the role: base < $300K tripped the gate, ceiling 55 landed it at ~54, and
+// ingestion auto-passes anything under 55 into a hidden status.
 const unknownCo = computeFit({ ...dollarsBase, company: "Nobody Curated Inc", statedBase: 209 });
-check("unknown company does NOT gross up (cash share would be a guess)",
-  !unknownCo.explanations.compensation.includes("grossed up"),
+check("unknown company grosses up using the default cash share",
+  unknownCo.explanations.compensation.includes("grossed up"),
   unknownCo.explanations.compensation);
+check("the default cash share is labelled as assumed, not stated as fact",
+  unknownCo.explanations.compensation.includes("company not in facts table"),
+  unknownCo.explanations.compensation);
+check("an uncurated gross-up is flagged as the weakest comp read",
+  unknownCo.confidence_reasons.some(r => r.includes("DEFAULT cash share")),
+  JSON.stringify(unknownCo.confidence_reasons));
+// A curated company must still beat an uncurated one on the same figure —
+// 0.70 is deliberately more conservative than Microsoft's 0.60.
+const curatedCo = computeFit({ ...dollarsBase, statedBase: 209 });
+check("curated cash share still beats the conservative default",
+  curatedCo.subscores.compensation > unknownCo.subscores.compensation,
+  `curated ${curatedCo.subscores.compensation} vs unknown ${unknownCo.subscores.compensation}`);
+
+// The bug this fixes: quoting a salary must not score WORSE than quoting none.
+const quotesSalary = computeFit({ ...dollarsBase, company: "Nobody Curated Inc", statedBase: 250 });
+const quotesNothing = computeFit({ ...dollarsBase, company: "Nobody Curated Inc", statedBase: null });
+check("a $250K base at an uncurated company clears the sub-$300K gate",
+  !quotesSalary.gates.some(g => g.reason.includes("$300K")),
+  JSON.stringify(quotesSalary.gates.map(g => g.reason)));
+// Not "quoting must score at least as well" — a genuinely low salary SHOULD
+// score below an unknown one. The bug was the size of the drop: quoting $250K
+// used to cost 30 points against silence (54 vs 84) purely because the figure
+// was read as total comp. A few points of honest difference is fine; a cliff
+// that clears the auto-pass threshold is not.
+check("quoting a salary costs a few points against silence, not a cliff",
+  quotesNothing.score - quotesSalary.score <= 5,
+  `quoted ${quotesSalary.score} vs silent ${quotesNothing.score}`);
+check("a quoted-salary role at an uncurated company survives the <55 auto-pass",
+  quotesSalary.score >= 55, `score ${quotesSalary.score}`);
 
 // A genuinely low package must still gate even after gross-up.
 const trulyLow = computeFit({ ...dollarsBase, statedBase: 140 });
