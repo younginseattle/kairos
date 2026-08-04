@@ -65,8 +65,23 @@ check("stub description names the role", describeFromRow(csvRows[0]).includes("L
 console.log("\nJD FETCH");
 
 const longBody = "Responsibilities: own the observability platform roadmap. ".repeat(20);
+let throttleHits = 0;
 const server = createServer((req, res) => {
-  if (req.url === "/full") {
+  if (req.url === "/throttled") {
+    // 429 on the first ask, the posting on the second — what Confluent does
+    // when a run hits six of its listings back to back.
+    throttleHits++;
+    if (throttleHits === 1) {
+      res.writeHead(429, { "Retry-After": "1" });
+      res.end("slow down");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(`<html><body><p>${longBody}</p></body></html>`);
+  } else if (req.url === "/always429") {
+    res.writeHead(429, { "Retry-After": "1" });
+    res.end("slow down");
+  } else if (req.url === "/full") {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(`<html><head><style>.x{}</style><script>var a=1</script></head><body><h1>Role</h1><ul><li>${longBody}</li></ul></body></html>`);
   } else if (req.url === "/shell") {
@@ -83,6 +98,12 @@ const fullJd = await fetchJobDescription(`${base}/full`);
 check("HTML posting is fetched and de-tagged", fullJd.includes("observability platform roadmap"));
 check("script and style content is dropped", !fullJd.includes("var a=1") && !fullJd.includes(".x{}"));
 check("JS shell page is treated as no JD", (await fetchJobDescription(`${base}/shell`)) === "");
+
+const retried = await fetchJobDescription(`${base}/throttled`);
+check("a 429 is retried and the posting recovered", retried.includes("observability platform roadmap"));
+check("the retry honoured Retry-After rather than giving up", throttleHits === 2, `hits: ${throttleHits}`);
+check("a board that only ever 429s gives up and returns no JD",
+  (await fetchJobDescription(`${base}/always429`)) === "");
 check("404 is treated as no JD", (await fetchJobDescription(`${base}/missing`)) === "");
 check("empty URL is treated as no JD", (await fetchJobDescription("")) === "");
 

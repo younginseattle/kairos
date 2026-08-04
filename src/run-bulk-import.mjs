@@ -101,14 +101,18 @@ try {
   console.log('═══ BULK IMPORT SUMMARY ═══');
   console.log(`  Rows:        ${result.total}`);
   console.log(`  Imported:    ${result.imported}${DRY_RUN ? ' (dry run — nothing written)' : ''}`);
+  console.log(`  With JD:     ${result.withJd}`);
+  console.log(`  Stub only:   ${result.stubbed}`);
   console.log(`  Skipped:     ${result.skipped}`);
   console.log(`  Evaluated:   ${result.evaluated}`);
   console.log(`  Auto-passed: ${result.autoPassed}`);
   console.log('');
 
-  const notable = result.results.filter(r => r.status !== 'imported');
+  // 'would-import' is a dry run's success case — listing it under "not
+  // imported" buried the three rows that genuinely need a decision.
+  const notable = result.results.filter(r => r.status !== 'imported' && r.status !== 'would-import');
   if (notable.length) {
-    console.log('Rows not imported:');
+    console.log(DRY_RUN ? 'Rows that would not import:' : 'Rows not imported:');
     notable.forEach(r => console.log(`  · [${r.status}] ${r.title} — ${r.company}${r.detail ? ` (${r.detail})` : ''}`));
     console.log('');
   }

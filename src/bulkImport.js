@@ -204,7 +204,15 @@ function htmlToText(html) {
     .trim();
 }
 
-async function fetchText(url, { timeoutMs = 15000 } = {}) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Statuses worth trying again: the board is throttling or briefly unwell,
+// not saying no. A run of roles at one company (six Confluent listings in a
+// row) trips this reliably, and the postings are there on the second ask.
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS  = [2000, 5000];
+
+async function fetchOnce(url, timeoutMs) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -216,10 +224,32 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
         "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
       },
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const err = new Error(`HTTP ${res.status}`);
+      err.status     = res.status;
+      err.retryAfter = Number(res.headers.get("retry-after")) * 1000 || 0;
+      throw err;
+    }
     return await res.text();
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function fetchText(url, { timeoutMs = 15000 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetchOnce(url, timeoutMs);
+    } catch (err) {
+      const canRetry = RETRYABLE_STATUS.has(err.status) && attempt < RETRY_DELAYS_MS.length;
+      if (!canRetry) throw err;
+      // Honour Retry-After when the board sends a sane one, else back off.
+      const wait = err.retryAfter > 0 && err.retryAfter <= 30000
+        ? err.retryAfter
+        : RETRY_DELAYS_MS[attempt];
+      log(`  ${url} → HTTP ${err.status}, retrying in ${wait / 1000}s`);
+      await sleep(wait);
+    }
   }
 }
 
@@ -326,6 +356,7 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
 
   const results = [];
   let imported = 0, skipped = 0, evaluated = 0, autoPassed = 0;
+  let withJd = 0, stubbed = 0;
 
   const record = (row, status, detail = "") => {
     results.push({ title: row.title, company: row.company, url: row.url, status, detail });
@@ -358,6 +389,7 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
     let description = row.description;
     if (!description && fetchDescriptions) description = await fetchJobDescription(row.url);
     const jdFetched = Boolean(description);
+    if (jdFetched) withJd++; else stubbed++;
     if (!description) description = describeFromRow(row);
 
     const job = normalizeJob({ ...row, description, source: row.source || source });
@@ -413,10 +445,12 @@ export async function runBulkImport(supabaseClient, anthropicApiKey, rows, opts 
   log("═══ Bulk import complete ═══");
   log(`  Rows:        ${rows.length}`);
   log(`  Imported:    ${imported}${dryRun ? " (dry run — nothing written)" : ""}`);
+  log(`  With JD:     ${withJd}`);
+  log(`  Stub only:   ${stubbed}`);
   log(`  Skipped:     ${skipped}`);
   log(`  Evaluated:   ${evaluated}`);
   log(`  Auto-passed: ${autoPassed}`);
   log(`  Time:        ${elapsed}s`);
 
-  return { total: rows.length, imported, skipped, evaluated, autoPassed, results };
+  return { total: rows.length, imported, skipped, evaluated, autoPassed, withJd, stubbed, results };
 }
