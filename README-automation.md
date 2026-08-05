@@ -107,9 +107,10 @@ Common cron expressions:
 
 ```
 scripts/
-├── fetch-jobs.js        # Main ingestion script — parses email HTML via cheerio, plaintext fallback
-├── get-gmail-token.js   # One-time OAuth helper (run locally)
-└── package.json         # Script dependencies (@supabase/supabase-js, cheerio, ws)
+├── fetch-jobs.js             # Main ingestion script — parses email HTML via cheerio, plaintext fallback
+├── dedupe-existing-jobs.mjs  # One-off cleanup of duplicate rows created before identity dedup existed
+├── get-gmail-token.js        # One-time OAuth helper (run locally)
+└── package.json              # Script dependencies (@supabase/supabase-js, cheerio, ws)
 
 .github/workflows/
 └── fetch-jobs.yml       # GitHub Actions workflow

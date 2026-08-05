@@ -16,6 +16,8 @@
 
 import { computeFit, shouldAutoPass } from "./scoring.js";
 import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
+import { dedupeBatch, canonicalUrlKey } from "./jobIdentity.js";
+import { loadJobIndex, upgradeExistingJob } from "./jobIndex.js";
 
 // ─────────────────────────────────────────────────────────────────
 // SOURCES — verified Greenhouse and Lever board IDs
@@ -463,27 +465,28 @@ export function normalizeJob(job) {
 // 4. DEDUPLICATION
 // ─────────────────────────────────────────────────────────────────
 
-// LinkedIn serves the same posting at both linkedin.com/jobs/view/{id}/ and
-// linkedin.com/comm/jobs/view/{id} (no trailing slash) — dedup by the
-// extracted numeric id when the URL is a LinkedIn job link, so any variant
-// matches an existing row; exact string match for everything else.
-function extractLinkedInJobId(url) {
-  const m = /linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)/.exec(url || "");
-  return m ? m[1] : null;
-}
+// Identity-level dedup (same role, different site) lives in jobIdentity.js /
+// jobIndex.js and is what the pipeline uses — see findExistingJob below.
+// The URL-only check here remains for one-off callers that just want to ask
+// "is this exact link already in the pipeline?" without loading the index.
 
 /**
  * Returns true if a job with this URL already exists in Supabase.
  * On DB error, returns false (assume not duplicate) to avoid silent drops.
+ *
+ * URL-only: a role cross-posted to Greenhouse, an aggregator and LinkedIn
+ * has three different URLs and will NOT be caught here. Use
+ * loadJobIndex() + index.find(job) for real dedup.
  */
 export async function isDuplicateJob(supabaseClient, url) {
   if (!url) return false;
-  const jobId = extractLinkedInJobId(url);
+  const urlKey = canonicalUrlKey(url);
+  const linkedInId = urlKey.startsWith("linkedin:") ? urlKey.slice("linkedin:".length) : null;
   // .limit(1) + array-length check rather than .maybeSingle() — the ilike
   // pattern (and, given pre-existing duplicate rows, even an exact match in
   // rare cases) can match more than one row, and .maybeSingle() throws if so.
-  const query = jobId
-    ? supabaseClient.from("jobs").select("id").ilike("url", `%jobs/view/${jobId}%`)
+  const query = linkedInId
+    ? supabaseClient.from("jobs").select("id").ilike("url", `%jobs/view/${linkedInId}%`)
     : supabaseClient.from("jobs").select("id").eq("url", url);
   const { data, error } = await query.limit(1);
   if (error) {
@@ -492,6 +495,13 @@ export async function isDuplicateJob(supabaseClient, url) {
   }
   return Array.isArray(data) && data.length > 0;
 }
+
+/**
+ * Identity-aware duplicate lookup against a preloaded index.
+ * Re-exported here so callers of the pipeline have one import site.
+ */
+export { loadJobIndex, JobIndex } from "./jobIndex.js";
+export { jobIdentityKey, normalizeCompany, normalizeTitle, canonicalUrlKey } from "./jobIdentity.js";
 
 // ─────────────────────────────────────────────────────────────────
 // 5. INSERTION
@@ -709,27 +719,50 @@ export async function runJobIngestion(
 
   if (relevantJobs.length === 0) {
     log("No relevant jobs found — nothing to insert.");
-    return { total: allJobs.length, filtered: 0, inserted: 0, evaluated: 0, skipped: 0, sourceResults };
+    return { total: allJobs.length, filtered: 0, distinct: 0, crossPosted: 0, inserted: 0, upgraded: 0, evaluated: 0, skipped: 0, sourceResults };
   }
 
   // 3. Normalize
   const normalizedJobs = relevantJobs.map(normalizeJob);
 
+  // 4a. Collapse duplicates WITHIN this batch. A role listed on its own ATS
+  //     board and on an aggregator feed arrives twice in the same run, and
+  //     neither copy is in the database yet — so the database check below
+  //     can't see it. Keeps the most authoritative source of each role.
+  const { unique: batchJobs, duplicates: batchDuplicates } = dedupeBatch(normalizedJobs);
+  for (const { dropped, keptFrom } of batchDuplicates) {
+    log(`  Cross-posted in batch — keeping ${keptFrom.source}: "${dropped.title}" at ${dropped.company} (dropped ${dropped.source})`);
+  }
+  if (batchDuplicates.length > 0) {
+    log(`Collapsed ${batchDuplicates.length} cross-posted listing(s) → ${batchJobs.length} distinct role(s)`);
+  }
+
+  // 4b. Load the existing pipeline once, indexed by canonical URL and by
+  //     company+title identity — the per-URL query it replaces could never
+  //     match the same role posted under a different site's URL.
+  const jobIndex = await loadJobIndex(supabaseClient, { log, logError });
+
   // 4–6. Deduplicate → Insert → Evaluate
   let insertedCount  = 0;
   let skippedCount   = 0;
   let evaluatedCount = 0;
+  let upgradedCount  = 0;
 
-  for (const job of normalizedJobs) {
+  for (const job of batchJobs) {
     if (!job.url) {
       logError(`No URL — skipping: "${job.title}" at ${job.company}`);
       skippedCount++;
       continue;
     }
 
-    const duplicate = await isDuplicateJob(supabaseClient, job.url);
+    const duplicate = jobIndex.find(job);
     if (duplicate) {
-      log(`  Duplicate — skipping: "${job.title}" at ${job.company}`);
+      const via = duplicate.reason === "identity" ? "already in pipeline from another site" : "same listing";
+      log(`  Duplicate (${via}) — skipping: "${job.title}" at ${job.company}`);
+      // If this copy comes from a more authoritative source, repoint the
+      // existing row at it rather than leaving a stale aggregator link.
+      const upgraded = await upgradeExistingJob(supabaseClient, duplicate.row, job, { log, logError });
+      if (upgraded) upgradedCount++;
       skippedCount++;
       continue;
     }
@@ -738,6 +771,9 @@ export async function runJobIngestion(
     try {
       insertedJob = await insertJob(supabaseClient, job);
       insertedCount++;
+      // Index it immediately so a later listing of the same role in this
+      // same run matches it instead of inserting a second row.
+      jobIndex.add(insertedJob);
       log(`  ✓ Inserted: "${job.title}" at ${job.company}`);
     } catch (err) {
       logError(`  ✗ Insert failed: "${job.title}" — ${err.message}`);
@@ -771,7 +807,9 @@ export async function runJobIngestion(
   log("═══ Ingestion complete ═══");
   log(`  Fetched:   ${allJobs.length}`);
   log(`  Filtered:  ${relevantJobs.length}`);
+  log(`  Distinct:  ${batchJobs.length} (${batchDuplicates.length} cross-posted)`);
   log(`  Inserted:  ${insertedCount}`);
+  log(`  Upgraded:  ${upgradedCount}`);
   log(`  Evaluated: ${evaluatedCount}`);
   log(`  Skipped:   ${skippedCount}`);
   log(`  Time:      ${elapsed}s`);
@@ -779,7 +817,10 @@ export async function runJobIngestion(
   return {
     total:         allJobs.length,
     filtered:      relevantJobs.length,
+    distinct:      batchJobs.length,
+    crossPosted:   batchDuplicates.length,
     inserted:      insertedCount,
+    upgraded:      upgradedCount,
     evaluated:     evaluatedCount,
     skipped:       skippedCount,
     sourceResults,
