@@ -54,9 +54,33 @@ Key exports:
 - `SOURCES` — array of all target companies with ATS type and domain
 - `isRelevantJob(job, source)` — title filter for VP/Director/Staff/Group PM roles
 - `normalizeJob(job)` — maps raw job to Supabase schema
-- `isDuplicateJob(supabaseClient, url)` — dedup check
+- `isDuplicateJob(supabaseClient, url)` — URL-only check for one-off callers; does NOT catch cross-posted roles
 - `insertJob(supabaseClient, job)` — insert to Supabase
 - `runJobIngestion(supabaseClient, anthropicApiKey, candidateProfile)` — full pipeline
+
+### `src/jobIdentity.js` + `src/jobIndex.js`
+Deduplication. A single role is routinely posted to the company's own ATS board, an
+aggregator feed, and a LinkedIn job alert — three different URLs, so URL matching alone
+put the same job in the pipeline three times.
+
+- `jobIdentity.js` (pure, no imports — also loaded by `scripts/`): `normalizeCompany`,
+  `normalizeTitle`, `jobIdentityKey` (company + title, source-independent),
+  `canonicalUrlKey`, `sourceRank` / `isBetterSource`, `dedupeBatch`
+- `jobIndex.js`: `loadJobIndex(supabaseClient)` builds an index of the existing pipeline
+  keyed by both URL and identity; `index.find(job)` is the real dedup check.
+  `upgradeExistingJob` repoints an existing row at a more authoritative link instead of
+  inserting a second row.
+
+Source authority, highest first: `manual` → own ATS (`greenhouse`/`lever`/`ashby`/`rippling`)
+→ `linkedin_alert` → aggregators (`remoteok`/`weworkremotely`). Automation never overwrites
+a manual row.
+
+Every insert path goes through this: `ingestion.js`, `scripts/fetch-jobs.js`, and the
+three App.jsx save paths (quick score, autoeval save, manual Evaluate save).
+Tests: `node src/jobIdentity.test.mjs`.
+
+Rows created before this existed are cleaned up with
+`node --env-file=.env scripts/dedupe-existing-jobs.mjs` (dry run; `--apply` to write).
 
 ### `src/run-ingestion.mjs`
 Node.js script. Reads env from `.env` file. Calls `runJobIngestion`. Run as:
