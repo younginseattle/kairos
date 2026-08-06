@@ -14,6 +14,7 @@
  *   node --env-file=.env scripts/scan-google-jobs.mjs --days=14
  */
 
+import { isRelevantTitle } from '../src/titleFilter.js';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { createServer } from 'http';
 import { fileURLToPath } from 'url';
@@ -143,19 +144,10 @@ async function gmailGet(accessToken, path, params = {}) {
 }
 
 // ── Title filter ───────────────────────────────────────────────────
-const SENIORITY_KEYWORDS = [
-  'director', 'head of product', 'vp of product', 'vp product',
-  'vice president of product', 'vice president, product',
-  'group product manager', 'group pm',
-  'staff product manager', 'staff pm',
-  'principal product manager', 'principal pm',
-];
-const EXCLUSION_KEYWORDS = [
-  'marketing', 'engineer', 'developer', 'designer', 'analyst',
-  'counsel', 'finance', 'sales', 'recruiter', 'data science',
-  'research', 'operations', 'security', 'design',
-];
-const DOMAIN_KEYWORD = 'product';
+// isRelevantTitle is imported at the top of this file from
+// src/titleFilter.js — this section used to carry a third, narrower copy
+// that dropped Google's "Senior Product Manager, Cloud Platform"-style
+// titles entirely.
 
 const NON_US_COUNTRIES = [
   'united kingdom', 'england', 'scotland', 'wales', ', uk',
@@ -171,13 +163,6 @@ const BLOCKED_URL_DOMAINS = [
   'theladders.com', 'ladder.io', 'ziprecruiter.com',
   'simplyhired.com', 'careerbuilder.com', 'monster.com', 'dice.com',
 ];
-
-function isRelevantTitle(title) {
-  const t = title.toLowerCase();
-  if (!t.includes(DOMAIN_KEYWORD)) return false;
-  if (EXCLUSION_KEYWORDS.some(kw => t.includes(kw))) return false;
-  return SENIORITY_KEYWORDS.some(kw => t.includes(kw));
-}
 
 function isUSLocation(location) {
   const loc = (location || '').toLowerCase();
@@ -251,7 +236,9 @@ for (const { id } of messages) {
   for (const job of jobs) {
     if (seenUrls.has(job.url)) continue;
     seenUrls.add(job.url);
-    if (isRelevantTitle(job.title) && isUSLocation(job.location) && isAllowedURL(job.url)) candidates.push(job);
+    // broad: these arrive from a saved Google Careers alert that Matt already
+    // scoped by hand, so a senior title here does not need to restate its domain.
+    if (isRelevantTitle(job.title, { broad: true }) && isUSLocation(job.location) && isAllowedURL(job.url)) candidates.push(job);
   }
 }
 

@@ -16,6 +16,13 @@
 
 import { computeFit, shouldAutoPass } from "./scoring.js";
 import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
+import { isRelevantTitle, looksLikeSeniorTitle } from "./titleFilter.js";
+
+// Per-company cap on SmartRecruiters detail requests, and page cap on the
+// Amazon search API — both fetch N+1 requests per source, so they need a
+// ceiling to keep one company from dominating an ingestion run.
+const MAX_DETAIL_FETCHES = 25;
+const AMAZON_MAX_PAGES   = 5;
 
 // ─────────────────────────────────────────────────────────────────
 // SOURCES — verified Greenhouse and Lever board IDs
@@ -120,43 +127,11 @@ export const SOURCES = [
 // FILTER CONFIGURATION
 // ─────────────────────────────────────────────────────────────────
 
-const SENIORITY_KEYWORDS = [
-  "director",
-  "head of product",
-  "vp of product",
-  "vp product",
-  "vice president of product",
-  "vice president, product",
-  "group product manager",
-  "group pm",
-  "staff product manager",
-  "staff pm",
-  "principal product manager",
-  "principal pm",
-];
-
-const DOMAIN_KEYWORD = "product";
-
-/**
- * Drop any title containing these — prevents false positives like
- * "Principal Product Marketing Manager" or "Director of Product Engineering".
- */
-const EXCLUSION_KEYWORDS = [
-  "marketing",
-  "engineer",
-  "developer",
-  "designer",
-  "analyst",
-  "counsel",
-  "finance",
-  "sales",
-  "recruiter",
-  "data science",
-  "research",
-  "operations",
-  "security",
-  "design",
-];
+// Title matching now lives in src/titleFilter.js, shared with
+// scripts/fetch-jobs.js. The two copies had drifted — the LinkedIn parser
+// caught "Principal AI Product Manager" and "Sr. Product Manager, Platform"
+// while this path did not, so the same role appeared or vanished depending
+// on which pipeline saw it first.
 
 // ─────────────────────────────────────────────────────────────────
 // CLAUDE EVALUATION PROMPT
@@ -330,6 +305,106 @@ async function fetchRipplingJobs(companyId) {
   }));
 }
 
+async function fetchSmartRecruitersJobs(companyId) {
+  // The postings list carries no description, so pull detail only for the
+  // titles that could plausibly matter — a full detail sweep would be
+  // hundreds of requests per company for a handful of usable rows.
+  const res = await fetchWithTimeout(
+    `https://api.smartrecruiters.com/v1/companies/${companyId}/postings?limit=100`,
+  );
+  if (!res.ok) throw new Error(`SmartRecruiters fetch failed for "${companyId}" — HTTP ${res.status}`);
+  const data = await res.json();
+  if (!Array.isArray(data.content)) throw new Error(`SmartRecruiters: unexpected response for "${companyId}"`);
+
+  const shortlist = data.content.filter(p => looksLikeSeniorTitle(p.name)).slice(0, MAX_DETAIL_FETCHES);
+  return Promise.all(shortlist.map(async posting => {
+    let description = "";
+    try {
+      const d = await fetchWithTimeout(
+        `https://api.smartrecruiters.com/v1/companies/${companyId}/postings/${posting.id}`,
+      );
+      if (d.ok) {
+        const detail = await d.json();
+        description = Object.values(detail.jobAd?.sections || {})
+          .map(s => s?.text || "").filter(Boolean).join("\n\n");
+      }
+    } catch {
+      // Detail is best-effort — a posting with no description still gets
+      // inserted and can be evaluated later rather than silently dropped.
+    }
+    const loc = posting.location || {};
+    return {
+      title:       posting.name,
+      location:    [loc.city, loc.region, loc.country].filter(Boolean).join(", ") ||
+                   (loc.remote ? "Remote" : null),
+      url:         `https://jobs.smartrecruiters.com/${companyId}/${posting.id}`,
+      description,
+      company:     companyId,
+      source:      "smartrecruiters",
+    };
+  }));
+}
+
+async function fetchWorkableJobs(companyId) {
+  const res = await fetchWithTimeout(
+    `https://apply.workable.com/api/v1/widget/accounts/${companyId}?details=true`,
+  );
+  if (!res.ok) throw new Error(`Workable fetch failed for "${companyId}" — HTTP ${res.status}`);
+  const data = await res.json();
+  if (!Array.isArray(data.jobs)) throw new Error(`Workable: unexpected response for "${companyId}"`);
+  return data.jobs.map(job => ({
+    title:       job.title,
+    location:    [job.city, job.state, job.country].filter(Boolean).join(", ") || null,
+    url:         job.url || job.application_url,
+    description: [job.description, job.requirements].filter(Boolean).join("\n\n"),
+    company:     data.name || companyId,
+    source:      "workable",
+  }));
+}
+
+/**
+ * Amazon / AWS — amazon.jobs exposes a public search JSON endpoint, which
+ * is why Amazon can be polled here even though CLAUDE.md notes FAANG
+ * companies are unreachable via Greenhouse/Lever. This covers AWS, where
+ * the observability and infrastructure PM roles sit.
+ *
+ * `id` is used as the base_query, so several Amazon entries with different
+ * queries can coexist in SOURCES.
+ */
+async function fetchAmazonJobs(baseQuery = "product manager") {
+  const PAGE_SIZE = 100;
+  const jobs = [];
+  for (let page = 0; page < AMAZON_MAX_PAGES; page++) {
+    const params = new URLSearchParams({
+      base_query:   baseQuery,
+      result_limit: String(PAGE_SIZE),
+      offset:       String(page * PAGE_SIZE),
+      sort:         "recent",
+    });
+    params.append("normalized_country_code[]", "USA");
+    const res = await fetchWithTimeout(`https://www.amazon.jobs/search.json?${params}`, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; KairosJobBot/1.0)" },
+      timeoutMs: 15000,
+    });
+    if (!res.ok) throw new Error(`Amazon fetch failed — HTTP ${res.status}`);
+    const data = await res.json();
+    const batch = Array.isArray(data.jobs) ? data.jobs : [];
+    jobs.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
+  return jobs.map(job => ({
+    title:       job.title,
+    location:    job.normalized_location || job.location || null,
+    url:         job.job_path ? `https://www.amazon.jobs${job.job_path}` : null,
+    description: [job.description, job.basic_qualifications, job.preferred_qualifications]
+                   .filter(Boolean).join("\n\n"),
+    // AWS roles are posted under company_name "Amazon Web Services" — keep
+    // that distinction so scoring sees the actual business unit.
+    company:     job.company_name || "Amazon",
+    source:      "amazon",
+  }));
+}
+
 // ── Aggregators ──────────────────────────────────────────────────
 // Unlike the ATS fetchers above, one request here returns jobs from many
 // different companies — so `company` is read per-listing from the job data
@@ -381,24 +456,39 @@ function extractXmlField(block, tag) {
 }
 
 /**
- * Dispatches to the correct fetcher.
- * Failures are isolated — one bad source never blocks the rest.
+ * Dispatches to the correct fetcher and lets failures propagate.
+ * Exported so scripts/verify-boards.mjs can see the real error for an
+ * unverified board ID instead of an empty array.
  */
-async function fetchJobsFromSource({ id, ats }) {
-  try {
-    log(`Fetching ${ats} → ${id}…`);
+export async function fetchSourceJobs({ id, ats }) {
+  {
     let jobs;
     if      (ats === "greenhouse")     jobs = await fetchGreenhouseJobs(id);
     else if (ats === "lever")          jobs = await fetchLeverJobs(id);
     else if (ats === "ashby")          jobs = await fetchAshbyJobs(id);
     else if (ats === "rippling")       jobs = await fetchRipplingJobs(id);
+    else if (ats === "smartrecruiters") jobs = await fetchSmartRecruitersJobs(id);
+    else if (ats === "workable")       jobs = await fetchWorkableJobs(id);
+    else if (ats === "amazon")         jobs = await fetchAmazonJobs(id);
     else if (ats === "remoteok")       jobs = await fetchRemoteOkJobs();
     else if (ats === "weworkremotely") jobs = await fetchWeWorkRemotelyJobs(id);
     else throw new Error(`Unknown ats type "${ats}"`);
-    log(`  ✓ ${jobs.length} jobs from ${id}`);
+    return jobs;
+  }
+}
+
+/**
+ * Wrapper used by the pipeline: failures are isolated and logged so one
+ * bad source never blocks the rest of the run.
+ */
+async function fetchJobsFromSource(source) {
+  try {
+    log(`Fetching ${source.ats} → ${source.id}…`);
+    const jobs = await fetchSourceJobs(source);
+    log(`  ✓ ${jobs.length} jobs from ${source.id}`);
     return jobs;
   } catch (err) {
-    logError(`  ✗ ${id} (${ats}): ${err.message}`);
+    logError(`  ✗ ${source.id} (${source.ats}): ${err.message}`);
     return [];
   }
 }
@@ -408,34 +498,13 @@ async function fetchJobsFromSource({ id, ats }) {
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * Returns true only if the title:
- *   - contains a seniority keyword
- *   - contains "product"
- *   - does NOT contain any exclusion keyword
+ * Delegates to the shared filter. `broadFilter` sources drop the
+ * platform-scope requirement on senior-level (non-lead) titles — at
+ * Anthropic or Vercel a "Senior Product Manager, Core" is worth seeing
+ * even when the title says nothing about the domain.
  */
 export function isRelevantJob(job, source = null) {
-  if (!job.title) return false;
-  const title = job.title.toLowerCase();
-  const isExcluded = EXCLUSION_KEYWORDS.some(kw => title.includes(kw));
-  if (isExcluded) return false;
-
-  // Broad filter: for top AI/dev-tool companies, accept any senior PM role
-  // regardless of exact title — catches "Product Manager L7", "PM, Core" etc.
-  // "manager" alone is intentionally excluded — too many non-senior PM roles slip through.
-  const useBroadFilter = source?.broadFilter === true;
-  if (useBroadFilter) {
-    const hasProduct  = title.includes("product");
-    const hasSenior   = title.includes("senior") || title.includes("staff") ||
-                        title.includes("principal") || title.includes("director") ||
-                        title.includes("lead") || title.includes("head") ||
-                        title.includes("group") || title.includes("vp");
-    return hasProduct && hasSenior;
-  }
-
-  // Standard filter: must have seniority signal + "product"
-  const hasSeniority = SENIORITY_KEYWORDS.some(kw => title.includes(kw));
-  const hasProduct   = title.includes(DOMAIN_KEYWORD);
-  return hasSeniority && hasProduct;
+  return isRelevantTitle(job.title, { broad: source?.broadFilter === true });
 }
 
 // ─────────────────────────────────────────────────────────────────

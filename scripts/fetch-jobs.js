@@ -18,6 +18,7 @@
 
 import ws from 'ws';
 import * as cheerio from 'cheerio';
+import { isRelevantTitle, explainTitle, looksLikeSeniorTitle } from '../src/titleFilter.js';
 
 // Must be set before @supabase/supabase-js is loaded — it checks
 // globalThis.WebSocket at import time and throws on Node < 22 without it.
@@ -54,28 +55,9 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 // Title / location filter
 // ─────────────────────────────────────────────────────────────────
 
-const SENIORITY_KEYWORDS = [
-  'director', 'head of product',
-  'vp of product', 'vp product', 'vp, product', 'vp, products',
-  'vp of products', 'vp products',
-  'vice president of product', 'vice president, product',
-  'vice president of products', 'vice president, products',
-  'group product manager', 'group pm',
-  'staff product manager', 'staff pm',
-  'principal product manager', 'principal pm',
-  // Catch "Principal <domain> Product Manager" and similar patterns
-  // where a domain word sits between the seniority level and "product"
-  'senior product manager',
-];
-const EXCLUSION_KEYWORDS = [
-  'marketing', 'engineer', 'designer', 'analyst',
-  'counsel', 'finance', 'sales', 'recruiter', 'data science',
-  'research', 'operations', 'security', 'design',
-];
+// Title matching moved to src/titleFilter.js — shared with src/ingestion.js
+// so an email-sourced role and a board-sourced role are judged identically.
 
-// "developer" is intentionally excluded from EXCLUSION_KEYWORDS because
-// VP/Director PM roles for "developer platform" products would be wrongly blocked.
-// "engineer" already catches software engineer job titles.
 const NON_US_COUNTRIES = [
   'united kingdom', 'england', 'scotland', 'wales', ', uk',
   'canada', 'germany', 'netherlands', 'france', 'spain', 'italy',
@@ -96,26 +78,10 @@ const BLOCKED_URL_DOMAINS = [
   'dice.com',
 ];
 
-// Regex patterns for seniority levels where a domain word may sit between
-// the level and "product" (e.g. "Principal AI Product Manager").
-const SENIORITY_PATTERNS = [
-  /\bprincipal\b.{0,30}\bproduct\b/i,
-  /\bstaff\b.{0,30}\bproduct\b/i,
-  /\bvice\s+president\b.{0,30}\bproduct/i,
-  /\bvp\b.{0,20}\bproduct/i,
-  // "Sr." / "Sr" abbreviation — e.g. "Sr. Product Manager, Vehicle Health
-  // Alerts" was silently dropped because SENIORITY_KEYWORDS only matched
-  // the spelled-out "senior product manager".
-  /\bsr\.?\b.{0,30}\bproduct\b/i,
-];
-
-function isRelevantTitle(title) {
-  const t = title.toLowerCase();
-  if (!t.includes('product')) return false;
-  if (EXCLUSION_KEYWORDS.some(kw => t.includes(kw))) return false;
-  if (SENIORITY_KEYWORDS.some(kw => t.includes(kw))) return true;
-  return SENIORITY_PATTERNS.some(re => re.test(t));
-}
+// LinkedIn alerts are already narrowed by Matt's saved-search criteria, so
+// treat them as a broad-filter source: a senior title that arrives here has
+// passed a human-authored filter once already.
+const LINKEDIN_TITLE_OPTS = { broad: true };
 
 function isUSLocation(location) {
   const loc = (location || '').toLowerCase();
@@ -278,13 +244,9 @@ function applyCommonFilters(title, company, location, url, emailIndex, urlCount,
     if (VERBOSE) console.log(`    ✗ SKIP: title/company length check failed`);
     return null;
   }
-  if (!isRelevantTitle(title)) {
+  if (!isRelevantTitle(title, LINKEDIN_TITLE_OPTS)) {
     if (VERBOSE) {
-      const t = title.toLowerCase();
-      const hasProduct = t.includes('product');
-      const hasSeniority = SENIORITY_KEYWORDS.some(kw => t.includes(kw));
-      const excluded = EXCLUSION_KEYWORDS.find(kw => t.includes(kw));
-      console.log(`    ✗ SKIP: isRelevantTitle failed — hasProduct:${hasProduct} hasSeniority:${hasSeniority} excluded:${excluded || 'none'}`);
+      console.log(`    ✗ SKIP: ${explainTitle(title, LINKEDIN_TITLE_OPTS).reason}`);
     }
     return null;
   }
@@ -383,10 +345,7 @@ function parseJobsFromHtml(html, emailIndex = 0) {
     // Scan the card's individual leaf lines instead and take the first one
     // that actually reads like a seniority-level PM title — the same
     // reliable signal the plaintext fallback parser uses.
-    let title = uniqueLines.find(l =>
-      SENIORITY_KEYWORDS.some(kw => l.toLowerCase().includes(kw)) ||
-      SENIORITY_PATTERNS.some(re => re.test(l))
-    ) || '';
+    let title = uniqueLines.find(looksLikeSeniorTitle) || '';
     if (!title) {
       // Rare fallback: no leaf line matched — take the first anchor with
       // substantial, non-boilerplate text.
@@ -451,8 +410,7 @@ function parseJobsFromPlainText(body, emailIndex = 0) {
 
     let title = lines[lines.length - (companyOffset + 1)] || company;
     for (let i = lines.length - (companyOffset + 1); i >= 0; i--) {
-      const candidate = lines[i].toLowerCase();
-      if (SENIORITY_KEYWORDS.some(kw => candidate.includes(kw))) {
+      if (looksLikeSeniorTitle(lines[i])) {
         title = lines[i];
         break;
       }

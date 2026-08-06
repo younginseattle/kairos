@@ -1,0 +1,34 @@
+name: Verify Job Boards
+
+# Probes the unverified board IDs in src/candidateSources.js against the
+# live ATS APIs. Runs here rather than locally because dev sandboxes proxy
+# outbound HTTPS and block the ATS hosts, which makes a working board look
+# identical to a dead one.
+#
+# Nothing is written to Supabase — this only reads public job boards, so it
+# needs no secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Comma-separated company name filter (e.g. clickhouse,lambda). Blank = all.'
+        required: false
+        default: ''
+
+jobs:
+  verify:
+    name: Probe candidate boards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Probe boards
+        run: |
+          if [ -n "${{ inputs.only }}" ]; then
+            node scripts/verify-boards.mjs --only="${{ inputs.only }}"
+          else
+            node scripts/verify-boards.mjs
+          fi
