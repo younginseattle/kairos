@@ -29,8 +29,13 @@ const candidates = ONLY
   : CANDIDATE_SOURCES;
 
 if (!candidates.length) {
-  console.error(`✗ No candidates matched --only=${ONLY.join(',')}`);
-  process.exit(1);
+  if (ONLY) {
+    console.error(`✗ No candidates matched --only=${ONLY.join(',')}`);
+    process.exit(1);
+  }
+  console.log('No candidates staged in src/candidateSources.js — nothing to probe.');
+  console.log('Add board guesses there and push; this workflow runs on any change to that file.');
+  process.exit(0);
 }
 
 const probes = candidateProbes(candidates);

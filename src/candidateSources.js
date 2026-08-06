@@ -19,75 +19,49 @@
  *
  * A response with zero jobs does not count as confirmation — see the note
  * in verify-boards.mjs.
+ *
+ * Empty right now: two probe rounds on 2026-08-06 resolved every
+ * candidate either into SOURCES or into KNOWN_UNREACHABLE below.
  * ═══════════════════════════════════════════════════════════════
  */
 
-export const CANDIDATE_SOURCES = [
-  // ── Amazon business-category slug check ──────────────────────────
-  // The AWS entry in SOURCES filters by business_category to keep Amazon
-  // retail PM roles out. If that slug is wrong the filter silently returns
-  // nothing, so it is probed here alongside slug alternates.
-  { company: "AWS (category slug check)", tier: 1, domain: "infrastructure",
-    guesses: [
-      { ats: "amazon", id: "product manager", businessCategory: "amazon-web-services" },
-      { ats: "amazon", id: "product manager", businessCategory: "aws" },
-    ] },
+export const CANDIDATE_SOURCES = [];
 
-  // ── Companies whose boards responded with an empty list ──────────
-  // Verified 2026-08-06: these answered HTTP 200 with zero jobs. Splunk,
-  // Nutanix, Dynatrace and Remitly all have hundreds of open roles, so an
-  // empty list means the host accepted a token it does not serve. Retrying
-  // with different tokens before writing them off.
-  { company: "Splunk", tier: 1, domain: "observability",
-    guesses: [{ ats: "smartrecruiters", id: "SplunkInc" }, { ats: "smartrecruiters", id: "Splunk1" }, { ats: "greenhouse", id: "splunkinc" }] },
-  { company: "Dynatrace", tier: 1, domain: "observability",
-    guesses: [{ ats: "smartrecruiters", id: "Dynatrace" }, { ats: "workable", id: "dynatrace-1" }, { ats: "greenhouse", id: "dynatrace1" }] },
-  { company: "Infoblox", tier: 2, domain: "infrastructure",
-    guesses: [{ ats: "smartrecruiters", id: "Infoblox1" }, { ats: "workable", id: "infoblox-inc" }, { ats: "greenhouse", id: "infobloxinc" }] },
-  { company: "Nutanix", tier: 2, domain: "infrastructure",
-    guesses: [{ ats: "smartrecruiters", id: "Nutanix1" }, { ats: "greenhouse", id: "nutanixinc" }] },
-  { company: "Netdata", tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "workable", id: "netdata-1" }, { ats: "greenhouse", id: "netdata" }, { ats: "lever", id: "netdata" }] },
-  { company: "Dagster Labs", tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "dagsterlabs" }, { ats: "lever", id: "dagster" }] },
-  { company: "Remitly", tier: 3, domain: "platform",
-    guesses: [{ ats: "smartrecruiters", id: "Remitly1" }, { ats: "greenhouse", id: "remitlyinc" }] },
-
-  // ── Unreachable on every guess so far ────────────────────────────
-  // Verified 2026-08-06: all guesses 404'd. Their careers pages are live
-  // and human-browsable, so these are either wrong tokens or companies
-  // with public API access disabled. Fresh guesses below; if these fail
-  // too, route them through a LinkedIn job alert instead.
-  { company: "Weights & Biases", tier: 1, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "weightsandbiases" }, { ats: "greenhouse", id: "wandb" }, { ats: "ashby", id: "wandbai" }] },
-  { company: "Groq", tier: 1, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "groqinc" }, { ats: "ashby", id: "groqinc" }, { ats: "greenhouse", id: "groq75" }] },
-  { company: "Cerebras", tier: 2, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "cerebrassystems" }, { ats: "ashby", id: "cerebras" }] },
-  { company: "Redpanda", tier: 1, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "redpanda" }, { ats: "ashby", id: "redpandadata" }, { ats: "lever", id: "redpanda" }] },
-  { company: "Timescale", tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "timescaledb" }, { ats: "ashby", id: "timescaledb" }] },
-  { company: "InfluxData", tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "influxdb" }, { ats: "ashby", id: "influxdata" }] },
-  { company: "Neon", tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "neon" }, { ats: "greenhouse", id: "neondatabase" }] },
-  { company: "Retool", tier: 2, domain: "devtools", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "retoolhq" }, { ats: "ashby", id: "retoolhq" }] },
-  { company: "Tecton", tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "tectonai" }, { ats: "lever", id: "tecton" }] },
-  { company: "Coralogix", tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "coralogix" }, { ats: "greenhouse", id: "coralogixltd" }] },
-  { company: "Logz.io", tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "logzio" }, { ats: "greenhouse", id: "logz" }] },
-  { company: "Groundcover", tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "groundcoverlabs" }, { ats: "lever", id: "groundcover" }] },
-  { company: "Qumulo", tier: 2, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "qumuloinc" }, { ats: "ashby", id: "qumulo" }, { ats: "smartrecruiters", id: "Qumulo" }] },
-  { company: "Auvik", tier: 2, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "auviknetworks" }, { ats: "ashby", id: "auvik" }, { ats: "smartrecruiters", id: "Auvik" }] },
-  { company: "Middleware", tier: 2, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "middlewarelabs" }, { ats: "ashby", id: "middlewarelabs" }] },
+/**
+ * Companies probed and not reachable by API, recorded so future sessions
+ * do not burn another round re-guessing the same tokens. Each has a live,
+ * human-browsable careers page — the API is what is unavailable, either
+ * because public access is disabled or because the real token is not
+ * guessable from the company name.
+ *
+ * `finding` values:
+ *   404      — every guessed token returned HTTP 404
+ *   empty    — host answered 200 with zero jobs for a company that
+ *              demonstrably has open roles, i.e. it accepted a token it
+ *              does not actually serve
+ *
+ * The route for all of these is a LinkedIn job alert, which
+ * scripts/fetch-jobs.js already ingests.
+ */
+export const KNOWN_UNREACHABLE = [
+  // Probed 2026-08-06, runs 31059467660 and 31059866905
+  { company: "Splunk",           finding: "empty", tried: ["smartrecruiters/Splunk", "smartrecruiters/SplunkInc", "smartrecruiters/Splunk1", "greenhouse/splunk", "greenhouse/splunkinc"] },
+  { company: "Dynatrace",        finding: "empty", tried: ["smartrecruiters/Dynatrace", "smartrecruiters/Dynatrace1", "workable/dynatrace", "workable/dynatrace-1", "greenhouse/dynatrace", "greenhouse/dynatrace1"] },
+  { company: "Infoblox",         finding: "empty", tried: ["smartrecruiters/Infoblox", "smartrecruiters/Infoblox1", "workable/infoblox", "workable/infoblox-inc", "greenhouse/infoblox", "greenhouse/infobloxinc"] },
+  { company: "Nutanix",          finding: "empty", tried: ["smartrecruiters/Nutanix", "smartrecruiters/Nutanix1", "greenhouse/nutanix", "greenhouse/nutanixinc"] },
+  { company: "Remitly",          finding: "empty", tried: ["smartrecruiters/Remitly", "smartrecruiters/Remitly1", "greenhouse/remitly", "greenhouse/remitlyinc"] },
+  { company: "Tecton",           finding: "empty", tried: ["lever/tecton", "greenhouse/tecton", "greenhouse/tectonai", "ashby/tecton"] },
+  { company: "Netdata",          finding: "empty", tried: ["workable/netdata", "workable/netdata-1", "ashby/netdata", "greenhouse/netdata", "lever/netdata"] },
+  { company: "Dagster Labs",     finding: "empty", tried: ["greenhouse/dagsterlabs", "ashby/dagster", "ashby/dagsterlabs", "lever/dagster"] },
+  { company: "Weights & Biases", finding: "404",   tried: ["ashby/wandb", "ashby/wandbai", "ashby/weightsandbiases", "greenhouse/wandb", "greenhouse/weightsandbiases", "lever/wandb"] },
+  { company: "Groq",             finding: "404",   tried: ["greenhouse/groq", "greenhouse/groqinc", "greenhouse/groq75", "ashby/groq", "ashby/groqinc", "lever/groq"] },
+  { company: "Redpanda",         finding: "404",   tried: ["greenhouse/redpanda", "greenhouse/redpandadata", "ashby/redpanda", "ashby/redpandadata", "lever/redpanda"] },
+  { company: "Timescale",        finding: "404",   tried: ["greenhouse/timescale", "greenhouse/timescaledb", "ashby/timescale", "ashby/timescaledb", "lever/timescale"] },
+  { company: "Retool",           finding: "404",   tried: ["greenhouse/retool", "greenhouse/retoolhq", "ashby/retool", "ashby/retoolhq", "lever/retool"] },
+  { company: "Coralogix",        finding: "404",   tried: ["greenhouse/coralogix", "greenhouse/coralogixltd", "ashby/coralogix", "workable/coralogix", "lever/coralogix"] },
+  { company: "Logz.io",          finding: "404",   tried: ["greenhouse/logzio", "greenhouse/logz", "ashby/logzio", "workable/logzio", "lever/logzio"] },
+  { company: "Groundcover",      finding: "404",   tried: ["greenhouse/groundcover", "ashby/groundcover", "ashby/groundcoverlabs", "workable/groundcover", "lever/groundcover"] },
+  { company: "Middleware",       finding: "404",   tried: ["greenhouse/middlewarelabs", "ashby/middleware", "ashby/middlewarelabs", "lever/middleware"] },
 ];
 
 /**

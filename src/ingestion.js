@@ -152,9 +152,21 @@ export const SOURCES = [
   { id: "sourcegraph91",     ats: "greenhouse", tier: 2, domain: "devtools",       broadFilter: true },
   { id: "linear",            ats: "ashby",      tier: 3, domain: "devtools",       broadFilter: true },
 
+  // ── Verified 2026-08-06, second probe (Actions run 31059866905) ───
+  { id: "cerebras",          ats: "ashby",      tier: 2, domain: "infrastructure", broadFilter: true },
+  { id: "neon",              ats: "ashby",      tier: 2, domain: "platform",       broadFilter: true },
+  { id: "influxdata",        ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+  { id: "qumulo",            ats: "ashby",      tier: 2, domain: "infrastructure", broadFilter: true }, // Seattle HQ
+  { id: "auviknetworks",     ats: "greenhouse", tier: 2, domain: "observability",  broadFilter: true },
+
   // ── Amazon / AWS — public search API, not an ATS board ────────────
   // `id` is the search query. business_category confines it to AWS: the
-  // unfiltered query matched 105 titles, mostly Amazon retail PM roles.
+  // unfiltered query returned 482 roles / 105 matching, mostly Amazon
+  // retail (Homepage and NavX, Amazon Lists, Last Mile Execution
+  // Planning). With the category it is 131 / 35, and the matches are S3,
+  // Aurora, IAM, VPC, Serverless Compute — the roles worth seeing.
+  // "amazon-web-services" and "aws" returned identical result sets in the
+  // probe, so amazon.jobs evidently aliases them.
   { id: "product manager", ats: "amazon", tier: 1, domain: "infrastructure",
     businessCategory: "amazon-web-services" },
 
