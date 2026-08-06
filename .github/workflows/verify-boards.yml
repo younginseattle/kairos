@@ -9,6 +9,13 @@ name: Verify Job Boards
 # needs no secrets.
 
 on:
+  # Also runs on push when the candidate list or the prober itself changes,
+  # so adding a board guess verifies itself without a manual dispatch.
+  push:
+    paths:
+      - 'src/candidateSources.js'
+      - 'scripts/verify-boards.mjs'
+      - '.github/workflows/verify-boards.yml'
   workflow_dispatch:
     inputs:
       only:
