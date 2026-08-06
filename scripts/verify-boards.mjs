@@ -63,11 +63,18 @@ await runPool(probes, async probe => {
 
 // ── Summary ────────────────────────────────────────────────────────
 // One winner per company: prefer the guess with matching roles, then the
-// one with any jobs at all. A board that responds with an empty array is
-// still a real board — the company just has nothing open right now.
+// one with the most jobs.
+//
+// A response carrying zero jobs is NOT treated as confirmation. The first
+// live run had workable/splunk and smartrecruiters/Nutanix answering 200
+// with an empty list — these are companies with hundreds of open roles, so
+// an empty list means the endpoint accepted a token it does not actually
+// serve. Promoting those would put a permanently silent source in SOURCES.
 const byCompany = new Map();
+const emptyResponders = [];
 for (const r of results) {
   if (!r.ok) continue;
+  if (r.total === 0) { emptyResponders.push(r); continue; }
   const current = byCompany.get(r.company);
   const better = !current
     || r.matches.length > current.matches.length
@@ -87,6 +94,15 @@ for (const r of confirmed) {
   console.log(`\n${r.company} → ${r.ats}/${r.id}  (${r.total} jobs, ${r.matches.length} matching)`);
   r.matches.slice(0, 10).forEach(t => console.log(`    · ${t}`));
   if (r.matches.length > 10) console.log(`    … and ${r.matches.length - 10} more`);
+}
+
+if (emptyResponders.length) {
+  console.log(`\n${'═'.repeat(70)}`);
+  console.log(`RESPONDED BUT EMPTY — ${emptyResponders.length} guesses, not promotable`);
+  console.log('═'.repeat(70));
+  console.log('A 200 with zero jobs usually means the host accepted a token it does');
+  console.log('not serve. Verify by hand before trusting any of these.\n');
+  emptyResponders.forEach(r => console.log(`  ${r.company} → ${r.ats}/${r.id}`));
 }
 
 console.log(`\n${'═'.repeat(70)}`);

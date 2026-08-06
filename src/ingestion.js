@@ -116,6 +116,48 @@ export const SOURCES = [
   // on their Greenhouse/Lever boards — public API access is disabled by those companies.
   { id: "epirus",            ats: "greenhouse", tier: 2, domain: "defense"                   },
 
+  // ── Verified 2026-08-06 by scripts/verify-boards.mjs (Actions run 31059467660) ──
+  // Every entry below responded with a non-empty job list in that run; the
+  // count in each comment is how many titles passed the filter at the time.
+  // Zero-match boards are kept on purpose — a live board with nothing open
+  // today is exactly what a poller is for.
+
+  // Data / analytics infrastructure
+  { id: "snowflake",         ats: "ashby",      tier: 1, domain: "platform",       broadFilter: true }, // 15 matching — note the working token is Ashby, not the greenhouse "snowflakecomputing" that 404'd before
+  { id: "clickhouse",        ats: "greenhouse", tier: 1, domain: "platform",       broadFilter: true }, // 6 matching
+  { id: "startree",          ats: "greenhouse", tier: 2, domain: "platform",       broadFilter: true },
+  { id: "materialize",       ats: "ashby",      tier: 2, domain: "platform",       broadFilter: true },
+  { id: "airbyte",           ats: "ashby",      tier: 2, domain: "platform",       broadFilter: true }, // Ashby works; the earlier Greenhouse 404 was a wrong token
+  { id: "prefect",           ats: "ashby",      tier: 2, domain: "platform",       broadFilter: true },
+  { id: "astronomer",        ats: "ashby",      tier: 2, domain: "platform",       broadFilter: true }, // 2 matching
+
+  // AI / GPU infrastructure
+  { id: "crusoe",            ats: "ashby",      tier: 1, domain: "infrastructure", broadFilter: true }, // 5 matching
+  { id: "lambda",            ats: "ashby",      tier: 1, domain: "infrastructure", broadFilter: true }, // 4 matching
+  { id: "nebius",            ats: "greenhouse", tier: 2, domain: "infrastructure", broadFilter: true }, // 4 matching
+  { id: "modal",             ats: "ashby",      tier: 1, domain: "infrastructure", broadFilter: true },
+  { id: "anyscale",          ats: "ashby",      tier: 1, domain: "platform",       broadFilter: true }, // 1 matching
+  { id: "togetherai",        ats: "greenhouse", tier: 1, domain: "infrastructure", broadFilter: true },
+  { id: "baseten",           ats: "ashby",      tier: 1, domain: "infrastructure", broadFilter: true },
+  { id: "langchain",         ats: "ashby",      tier: 1, domain: "platform",       broadFilter: true },
+
+  // Observability
+  { id: "sentry",            ats: "ashby",      tier: 1, domain: "observability",  broadFilter: true },
+
+  // Developer platforms / cloud
+  { id: "render",            ats: "ashby",      tier: 2, domain: "infrastructure", broadFilter: true }, // 4 matching
+  { id: "pulumicorporation", ats: "greenhouse", tier: 1, domain: "devtools",       broadFilter: true }, // 2 matching — Seattle HQ
+  { id: "supabase",          ats: "ashby",      tier: 2, domain: "platform",       broadFilter: true },
+  { id: "circleci",          ats: "greenhouse", tier: 2, domain: "devtools",       broadFilter: true },
+  { id: "sourcegraph91",     ats: "greenhouse", tier: 2, domain: "devtools",       broadFilter: true },
+  { id: "linear",            ats: "ashby",      tier: 3, domain: "devtools",       broadFilter: true },
+
+  // ── Amazon / AWS — public search API, not an ATS board ────────────
+  // `id` is the search query. business_category confines it to AWS: the
+  // unfiltered query matched 105 titles, mostly Amazon retail PM roles.
+  { id: "product manager", ats: "amazon", tier: 1, domain: "infrastructure",
+    businessCategory: "amazon-web-services" },
+
   // ── Aggregators — broaden beyond the hand-curated company list above ──
   // `id` here is a feed identifier, not a company — company comes from each
   // listing. Wellfound/AngelList was considered but has no public API, only
@@ -368,10 +410,16 @@ async function fetchWorkableJobs(companyId) {
  * companies are unreachable via Greenhouse/Lever. This covers AWS, where
  * the observability and infrastructure PM roles sit.
  *
- * `id` is used as the base_query, so several Amazon entries with different
- * queries can coexist in SOURCES.
+ * `id` is the base_query, not a board token, so several Amazon entries
+ * with different queries can coexist in SOURCES.
+ *
+ * `businessCategory` matters a lot: an unfiltered "product manager" query
+ * returned 482 roles of which 105 passed the title filter, and most were
+ * Amazon retail (Homepage and NavX, Amazon Lists, Last Mile Execution
+ * Planning) — noise that would dominate an ingestion run and burn a
+ * Claude evaluation each.
  */
-async function fetchAmazonJobs(baseQuery = "product manager") {
+async function fetchAmazonJobs({ id: baseQuery = "product manager", businessCategory } = {}) {
   const PAGE_SIZE = 100;
   const jobs = [];
   for (let page = 0; page < AMAZON_MAX_PAGES; page++) {
@@ -382,6 +430,7 @@ async function fetchAmazonJobs(baseQuery = "product manager") {
       sort:         "recent",
     });
     params.append("normalized_country_code[]", "USA");
+    if (businessCategory) params.append("business_category[]", businessCategory);
     const res = await fetchWithTimeout(`https://www.amazon.jobs/search.json?${params}`, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; KairosJobBot/1.0)" },
       timeoutMs: 15000,
@@ -460,8 +509,9 @@ function extractXmlField(block, tag) {
  * Exported so scripts/verify-boards.mjs can see the real error for an
  * unverified board ID instead of an empty array.
  */
-export async function fetchSourceJobs({ id, ats }) {
+export async function fetchSourceJobs(source) {
   {
+    const { id, ats } = source;
     let jobs;
     if      (ats === "greenhouse")     jobs = await fetchGreenhouseJobs(id);
     else if (ats === "lever")          jobs = await fetchLeverJobs(id);
@@ -469,7 +519,7 @@ export async function fetchSourceJobs({ id, ats }) {
     else if (ats === "rippling")       jobs = await fetchRipplingJobs(id);
     else if (ats === "smartrecruiters") jobs = await fetchSmartRecruitersJobs(id);
     else if (ats === "workable")       jobs = await fetchWorkableJobs(id);
-    else if (ats === "amazon")         jobs = await fetchAmazonJobs(id);
+    else if (ats === "amazon")         jobs = await fetchAmazonJobs(source);
     else if (ats === "remoteok")       jobs = await fetchRemoteOkJobs();
     else if (ats === "weworkremotely") jobs = await fetchWeWorkRemotelyJobs(id);
     else throw new Error(`Unknown ats type "${ats}"`);

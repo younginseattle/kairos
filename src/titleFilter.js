@@ -91,6 +91,13 @@ export const EXCLUSION_PATTERNS = [
   /\bsecurity\b/i,
   /\bsupport\b/i,
   /\bproduct\s+owner\b/i,
+  // Caught by the first verification run against live boards:
+  // Crusoe's "Senior Supervisor, Product Quality" is a manufacturing role,
+  // and Modal's "Member of Technical Staff - Product (Backend)" is an
+  // engineering role — both matched on the seniority word alone.
+  /\bsupervisor\b/i,
+  /\bmember\s+of\s+technical\s+staff\b/i,
+  /\bproduct\s+quality\b/i,
 ];
 
 /**

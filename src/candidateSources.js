@@ -11,129 +11,83 @@
  *
  * Workflow:
  *   1. Add candidates here, with every plausible {ats, id} guess.
- *   2. Run scripts/verify-boards.mjs — in GitHub Actions, not locally,
- *      because the dev sandbox's proxy blocks these hosts.
- *   3. Promote the confirmed entries it prints into SOURCES, and delete
- *      them from this file with the finding recorded in a comment.
+ *   2. Push — the Verify Job Boards workflow runs on any change to this
+ *      file. Do not probe from a dev sandbox: egress proxies there block
+ *      the ATS hosts, so every board looks dead.
+ *   3. Promote what it confirms into SOURCES, and record the finding for
+ *      what it does not.
  *
- * Companies marked `fromScan` were found to have live, matching PM roles
- * during the manual 24-board scan — if a probe fails for one of these,
- * the board is real and the API is the problem, so it belongs on the
- * LinkedIn-alert path rather than being dropped.
+ * A response with zero jobs does not count as confirmation — see the note
+ * in verify-boards.mjs.
  * ═══════════════════════════════════════════════════════════════
  */
 
 export const CANDIDATE_SOURCES = [
-  // ── Confirmed to have matching open roles in the manual scan ──────
-  { company: "ClickHouse", tier: 1, domain: "platform", broadFilter: true, fromScan: true,
-    guesses: [{ ats: "ashby", id: "ClickHouse" }, { ats: "greenhouse", id: "clickhouse" }, { ats: "lever", id: "clickhouse" }] },
-  { company: "Infoblox", tier: 2, domain: "infrastructure", fromScan: true,
-    guesses: [{ ats: "greenhouse", id: "infoblox" }, { ats: "smartrecruiters", id: "Infoblox" }, { ats: "workable", id: "infoblox" }] },
-  { company: "Snowflake", tier: 1, domain: "platform", broadFilter: true, fromScan: true,
-    // snowflakecomputing returned a genuine 404 on the Greenhouse API in an
-    // earlier Actions run — retrying with alternate tokens and ATS types.
-    guesses: [{ ats: "greenhouse", id: "snowflake" }, { ats: "ashby", id: "snowflake" }, { ats: "smartrecruiters", id: "Snowflake" }] },
-  { company: "Lambda", tier: 1, domain: "infrastructure", broadFilter: true, fromScan: true,
-    guesses: [{ ats: "ashby", id: "lambda" }, { ats: "ashby", id: "Lambda" }, { ats: "greenhouse", id: "lambdalabs" }] },
-  { company: "Crusoe", tier: 1, domain: "infrastructure", broadFilter: true, fromScan: true,
-    guesses: [{ ats: "ashby", id: "crusoe" }, { ats: "greenhouse", id: "crusoeenergy" }, { ats: "greenhouse", id: "crusoe" }] },
+  // ── Amazon business-category slug check ──────────────────────────
+  // The AWS entry in SOURCES filters by business_category to keep Amazon
+  // retail PM roles out. If that slug is wrong the filter silently returns
+  // nothing, so it is probed here alongside slug alternates.
+  { company: "AWS (category slug check)", tier: 1, domain: "infrastructure",
+    guesses: [
+      { ats: "amazon", id: "product manager", businessCategory: "amazon-web-services" },
+      { ats: "amazon", id: "product manager", businessCategory: "aws" },
+    ] },
 
-  // ── Amazon / AWS — public search API, not an ATS board ────────────
-  // Where the AWS observability and infrastructure PM roles live. The id
-  // is the search query, not a board token.
-  { company: "Amazon Web Services", tier: 1, domain: "infrastructure", fromScan: true,
-    guesses: [{ ats: "amazon", id: "product manager" }] },
-
-  // ── Observability / telemetry — the tier-1 domain ─────────────────
-  { company: "Dynatrace",   tier: 1, domain: "observability",
-    guesses: [{ ats: "greenhouse", id: "dynatrace" }, { ats: "smartrecruiters", id: "Dynatrace1" }, { ats: "workable", id: "dynatrace" }] },
-  { company: "Splunk",      tier: 1, domain: "observability",
-    guesses: [{ ats: "greenhouse", id: "splunk" }, { ats: "smartrecruiters", id: "Splunk" }] },
-  { company: "Sentry",      tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "sentry" }, { ats: "ashby", id: "sentry" }, { ats: "lever", id: "sentry" }] },
-  { company: "Coralogix",   tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "coralogix" }, { ats: "workable", id: "coralogix" }, { ats: "lever", id: "coralogix" }] },
-  { company: "Logz.io",     tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "logzio" }, { ats: "workable", id: "logzio" }, { ats: "lever", id: "logzio" }] },
-  { company: "Netdata",     tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "netdata" }, { ats: "workable", id: "netdata" }] },
-  { company: "Groundcover", tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "groundcover" }, { ats: "ashby", id: "groundcover" }, { ats: "workable", id: "groundcover" }] },
-  { company: "Middleware",  tier: 2, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "middleware" }, { ats: "lever", id: "middleware" }] },
-
-  // ── Data / streaming infrastructure ──────────────────────────────
-  { company: "Redpanda",   tier: 1, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "redpandadata" }, { ats: "ashby", id: "redpanda" }, { ats: "greenhouse", id: "redpanda" }] },
-  { company: "Materialize", tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "materialize" }, { ats: "ashby", id: "materialize" }] },
-  { company: "StarTree",   tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "startree" }, { ats: "ashby", id: "startree" }, { ats: "lever", id: "startree" }] },
-  { company: "Timescale",  tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "timescale" }, { ats: "ashby", id: "timescale" }, { ats: "lever", id: "timescale" }] },
-  { company: "InfluxData", tier: 1, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "influxdata" }, { ats: "lever", id: "influxdata" }] },
-  { company: "Airbyte",    tier: 2, domain: "platform", broadFilter: true,
-    // Earlier Greenhouse probe 404'd — retrying alternates before giving up.
-    guesses: [{ ats: "ashby", id: "airbyte" }, { ats: "lever", id: "airbyte" }, { ats: "greenhouse", id: "airbyte" }] },
-  { company: "Prefect",    tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "prefect" }, { ats: "greenhouse", id: "prefect" }] },
+  // ── Companies whose boards responded with an empty list ──────────
+  // Verified 2026-08-06: these answered HTTP 200 with zero jobs. Splunk,
+  // Nutanix, Dynatrace and Remitly all have hundreds of open roles, so an
+  // empty list means the host accepted a token it does not serve. Retrying
+  // with different tokens before writing them off.
+  { company: "Splunk", tier: 1, domain: "observability",
+    guesses: [{ ats: "smartrecruiters", id: "SplunkInc" }, { ats: "smartrecruiters", id: "Splunk1" }, { ats: "greenhouse", id: "splunkinc" }] },
+  { company: "Dynatrace", tier: 1, domain: "observability",
+    guesses: [{ ats: "smartrecruiters", id: "Dynatrace" }, { ats: "workable", id: "dynatrace-1" }, { ats: "greenhouse", id: "dynatrace1" }] },
+  { company: "Infoblox", tier: 2, domain: "infrastructure",
+    guesses: [{ ats: "smartrecruiters", id: "Infoblox1" }, { ats: "workable", id: "infoblox-inc" }, { ats: "greenhouse", id: "infobloxinc" }] },
+  { company: "Nutanix", tier: 2, domain: "infrastructure",
+    guesses: [{ ats: "smartrecruiters", id: "Nutanix1" }, { ats: "greenhouse", id: "nutanixinc" }] },
+  { company: "Netdata", tier: 1, domain: "observability", broadFilter: true,
+    guesses: [{ ats: "workable", id: "netdata-1" }, { ats: "greenhouse", id: "netdata" }, { ats: "lever", id: "netdata" }] },
   { company: "Dagster Labs", tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "dagsterlabs" }, { ats: "ashby", id: "dagster" }] },
-  { company: "Astronomer", tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "astronomer" }, { ats: "ashby", id: "astronomer" }] },
+    guesses: [{ ats: "ashby", id: "dagsterlabs" }, { ats: "lever", id: "dagster" }] },
+  { company: "Remitly", tier: 3, domain: "platform",
+    guesses: [{ ats: "smartrecruiters", id: "Remitly1" }, { ats: "greenhouse", id: "remitlyinc" }] },
 
-  // ── AI / ML infrastructure ───────────────────────────────────────
+  // ── Unreachable on every guess so far ────────────────────────────
+  // Verified 2026-08-06: all guesses 404'd. Their careers pages are live
+  // and human-browsable, so these are either wrong tokens or companies
+  // with public API access disabled. Fresh guesses below; if these fail
+  // too, route them through a LinkedIn job alert instead.
   { company: "Weights & Biases", tier: 1, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "wandb" }, { ats: "greenhouse", id: "weightsandbiases" }, { ats: "lever", id: "wandb" }] },
-  { company: "Anyscale",    tier: 1, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "anyscale" }, { ats: "ashby", id: "anyscale" }] },
-  { company: "Modal Labs",  tier: 1, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "modal" }, { ats: "ashby", id: "modallabs" }] },
-  { company: "Baseten",     tier: 1, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "baseten" }, { ats: "greenhouse", id: "baseten" }] },
-  { company: "Together AI", tier: 1, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "togetherai" }, { ats: "greenhouse", id: "togetherai" }, { ats: "ashby", id: "together" }] },
-  { company: "Groq",        tier: 1, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "groq" }, { ats: "ashby", id: "groq" }, { ats: "lever", id: "groq" }] },
-  { company: "Cerebras",    tier: 2, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "cerebras" }, { ats: "lever", id: "cerebras" }] },
-  { company: "LangChain",   tier: 1, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "langchain" }, { ats: "greenhouse", id: "langchain" }] },
-  { company: "Nebius",      tier: 2, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "nebius" }, { ats: "ashby", id: "nebius" }] },
-  { company: "Tecton",      tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "tecton" }, { ats: "ashby", id: "tecton" }] },
-
-  // ── Developer platforms / delivery ───────────────────────────────
-  { company: "Sourcegraph", tier: 2, domain: "devtools", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "sourcegraph91" }, { ats: "ashby", id: "sourcegraph" }, { ats: "greenhouse", id: "sourcegraph" }] },
-  { company: "Pulumi",      tier: 1, domain: "devtools", broadFilter: true,
-    // Seattle-headquartered — high location score by default.
-    guesses: [{ ats: "greenhouse", id: "pulumicorporation" }, { ats: "lever", id: "pulumi" }, { ats: "ashby", id: "pulumi" }] },
-  { company: "CircleCI",    tier: 2, domain: "devtools", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "circleci" }, { ats: "lever", id: "circleci" }] },
-  { company: "Supabase",    tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "supabase" }, { ats: "greenhouse", id: "supabase" }] },
-  { company: "Neon",        tier: 2, domain: "platform", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "neondatabase" }, { ats: "greenhouse", id: "neon" }] },
-  { company: "Render",      tier: 2, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "render" }, { ats: "greenhouse", id: "render" }] },
-  { company: "Retool",      tier: 2, domain: "devtools", broadFilter: true,
-    // Earlier Greenhouse probe 404'd — retrying alternates.
-    guesses: [{ ats: "ashby", id: "retool" }, { ats: "lever", id: "retool" }, { ats: "greenhouse", id: "retool" }] },
-  { company: "Linear",      tier: 3, domain: "devtools", broadFilter: true,
-    guesses: [{ ats: "ashby", id: "linear" }, { ats: "greenhouse", id: "linear" }] },
-
-  // ── Seattle / Pacific Northwest ecosystem ────────────────────────
-  { company: "Nutanix",     tier: 2, domain: "infrastructure",
-    guesses: [{ ats: "greenhouse", id: "nutanix" }, { ats: "smartrecruiters", id: "Nutanix" }] },
-  { company: "Qumulo",      tier: 2, domain: "infrastructure", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "qumulo" }, { ats: "lever", id: "qumulo" }] },
-  { company: "Remitly",     tier: 3, domain: "platform",
-    guesses: [{ ats: "greenhouse", id: "remitly" }, { ats: "smartrecruiters", id: "Remitly" }] },
-  { company: "Auvik",       tier: 2, domain: "observability", broadFilter: true,
-    guesses: [{ ats: "greenhouse", id: "auvik" }, { ats: "workable", id: "auvik" }, { ats: "lever", id: "auvik" }] },
+    guesses: [{ ats: "ashby", id: "weightsandbiases" }, { ats: "greenhouse", id: "wandb" }, { ats: "ashby", id: "wandbai" }] },
+  { company: "Groq", tier: 1, domain: "infrastructure", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "groqinc" }, { ats: "ashby", id: "groqinc" }, { ats: "greenhouse", id: "groq75" }] },
+  { company: "Cerebras", tier: 2, domain: "infrastructure", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "cerebrassystems" }, { ats: "ashby", id: "cerebras" }] },
+  { company: "Redpanda", tier: 1, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "redpanda" }, { ats: "ashby", id: "redpandadata" }, { ats: "lever", id: "redpanda" }] },
+  { company: "Timescale", tier: 2, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "timescaledb" }, { ats: "ashby", id: "timescaledb" }] },
+  { company: "InfluxData", tier: 1, domain: "observability", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "influxdb" }, { ats: "ashby", id: "influxdata" }] },
+  { company: "Neon", tier: 2, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "neon" }, { ats: "greenhouse", id: "neondatabase" }] },
+  { company: "Retool", tier: 2, domain: "devtools", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "retoolhq" }, { ats: "ashby", id: "retoolhq" }] },
+  { company: "Tecton", tier: 2, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "tectonai" }, { ats: "lever", id: "tecton" }] },
+  { company: "Coralogix", tier: 1, domain: "observability", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "coralogix" }, { ats: "greenhouse", id: "coralogixltd" }] },
+  { company: "Logz.io", tier: 1, domain: "observability", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "logzio" }, { ats: "greenhouse", id: "logz" }] },
+  { company: "Groundcover", tier: 1, domain: "observability", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "groundcoverlabs" }, { ats: "lever", id: "groundcover" }] },
+  { company: "Qumulo", tier: 2, domain: "infrastructure", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "qumuloinc" }, { ats: "ashby", id: "qumulo" }, { ats: "smartrecruiters", id: "Qumulo" }] },
+  { company: "Auvik", tier: 2, domain: "observability", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "auviknetworks" }, { ats: "ashby", id: "auvik" }, { ats: "smartrecruiters", id: "Auvik" }] },
+  { company: "Middleware", tier: 2, domain: "observability", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "middlewarelabs" }, { ats: "ashby", id: "middlewarelabs" }] },
 ];
 
 /**
@@ -144,7 +98,7 @@ export function candidateProbes(candidates = CANDIDATE_SOURCES) {
     c.guesses.map(g => ({
       company: c.company, tier: c.tier, domain: c.domain,
       broadFilter: c.broadFilter === true, fromScan: c.fromScan === true,
-      ats: g.ats, id: g.id,
+      ...g,
     }))
   );
 }

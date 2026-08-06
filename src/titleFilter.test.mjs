@@ -65,6 +65,9 @@ want("Senior Product Designer", false);
 want("Product Analyst", false);
 want("Director, Product Security", false);
 want("Senior Technical Product Owner", false);
+// Both of these came back as matches from the first live verification run.
+want("Senior Supervisor, Product Quality", false, { broad: true });
+want("Member of Technical Staff - Product (Backend)", false, { broad: true });
 want("VP of Engineering", false);
 want("Director of Sales", false);
 
