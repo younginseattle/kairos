@@ -85,11 +85,25 @@ and the blend is what surfaces the real risk. Do not force a single class to be 
 "target"     — Senior Director, Group PM, Staff PM, Principal PM. The band he wants.
 "director"   — Director. Adjacent to target.
 "vp_scoped"  — VP of Product at a LARGE company where the role is scoped, not "own everything".
-"org_owner"  — CPO, Head of Product, or VP of Product at a small company where he would BE
-               the product function. He is deliberately avoiding this. Classify honestly even
-               when the posting is attractive.
-"below"      — Senior PM or below.
+"org_owner"  — CPO, Head of Product, or VP of Product where he would BE the ENTIRE product
+               function: no peer product groups, typically reporting to the CEO. He is
+               deliberately avoiding this. Classify honestly even when the posting is
+               attractive. If the JD names peer product lines, or the role reports into a
+               larger product organisation, it is NOT org_owner.
+"below"      — Senior PM or below: an individual contributor with no people management and
+               no group-level ownership.
 "non_pm"     — an engineering role wearing product language (VP Engineering, CTO, Principal Engineer).
+
+Classify by the SCOPE OF THE PRODUCT ORG, not by whether the role manages people.
+Managing PMs does not by itself make a role org_owner — a first-line manager who owns ONE
+product group inside a larger product org is squarely "target". So is a player-coach who
+owns strategy directly while hiring the team that will own it later.
+
+A leading "Manager," or "Manager of" in a title denotes a people-management line, not a
+diminished scope: "Manager, Group Product Manager — Platform" is a Group PM role and
+belongs in "target". Read the whole posting before deciding: a role that hires three PMs
+for named sub-areas of a platform, alongside other product groups at the same company, is
+target — not org_owner and not below.
 
 ── NON-INTERCHANGEABILITY PROOF KEYS ──
 Emit a match ONLY when the JD describes a specific problem he has already solved. Generic

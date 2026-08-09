@@ -1,0 +1,43 @@
+name: Dedupe Existing Jobs
+
+# Collapses roles that were cross-posted to several sites and inserted more
+# than once before identity dedup existed. Costs nothing — no Claude calls.
+#
+# THIS ONE DELETES ROWS. Run with apply = false first and read the output.
+# An engaged row (reviewing / applied / interviewing / offer / rejected) always
+# survives and is never deleted, and the survivor inherits any score,
+# evaluation fields, description or applied_at it was missing before the
+# losing rows go, so collapsing does not cost information.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Write the changes. Leave false for a dry run that deletes nothing.'
+        type: boolean
+        default: false
+
+jobs:
+  dedupe:
+    name: Collapse duplicate rows
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Dedupe
+        env:
+          VITE_SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ inputs.apply }}" = "true" ]; then ARGS="--apply"; fi
+          echo "Running: node scripts/dedupe-existing-jobs.mjs $ARGS"
+          node scripts/dedupe-existing-jobs.mjs $ARGS

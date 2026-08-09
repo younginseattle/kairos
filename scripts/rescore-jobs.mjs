@@ -14,6 +14,10 @@
  *                        Unlike --dry-run, this costs nothing.
  * --limit=N              cap at N rows, applied AFTER the filters below
  * --company=a,b          only these companies (substring, case-insensitive)
+ * --status=new,reviewing only rows in these statuses
+ * --since=7d             only rows created in the last N days. Accepts "7d",
+ *                        "7", or an ISO date. Applied in the query, so a
+ *                        narrow window never reads the whole table.
  * --stale-signals        only rows whose stored extraction predates the current
  *                        signal vocabulary — see isStale() for what counts
  * --missing-extraction   only rows with no stored extraction at all. These
@@ -45,12 +49,41 @@ const PLAN     = process.argv.includes('--plan');
 const ONLY_NEW = process.argv.includes('--only-new');
 const STALE    = process.argv.includes('--stale-signals');
 const MISSING  = process.argv.includes('--missing-extraction');
+const INCLUDE_THIN = process.argv.includes('--include-thin');
+
+// Below this, the JD carries no usable evidence and the extraction is a guess
+// off the title. Matches the ceiling boundary in computeConfidence().
+const MIN_JD_CHARS = 300;
 const limitArg = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT    = limitArg ? parseInt(limitArg.split('=')[1], 10) : null;
 const compArg  = process.argv.find(a => a.startsWith('--company='));
 const COMPANIES = compArg
   ? compArg.split('=')[1].toLowerCase().split(',').map(s => s.trim()).filter(Boolean)
   : null;
+
+const statusArg = process.argv.find(a => a.startsWith('--status='));
+const STATUSES  = statusArg
+  ? statusArg.split('=')[1].toLowerCase().split(',').map(s => s.trim()).filter(Boolean)
+  : null;
+
+/** Accepts "7d", "7", or an ISO date. Returns an ISO cutoff, or null. */
+function parseSince(raw) {
+  if (!raw) return null;
+  const m = /^(\d+)\s*d?$/i.exec(raw.trim());
+  if (m) {
+    const d = new Date();
+    d.setDate(d.getDate() - parseInt(m[1], 10));
+    return d.toISOString();
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    console.error(`✗ --since="${raw}" is not a number of days or a date`);
+    process.exit(1);
+  }
+  return parsed.toISOString();
+}
+const sinceArg = process.argv.find(a => a.startsWith('--since='));
+const SINCE    = parseSince(sinceArg ? sinceArg.split('=')[1] : null);
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
@@ -118,7 +151,7 @@ console.log(`\n◆ Rescore with ${MODEL_VERSION}${DRY_RUN ? '  [DRY RUN — no w
 // PostgREST caps a single select at db-max-rows (1000 on Supabase) SILENTLY —
 // no error, no flag. The pipeline is already past that, so a bare select here
 // would quietly skip the oldest rows. Page unless an explicit --limit is set.
-const COLS = 'id,title,company,location,description,status,score,fit_score,fit_model_version,fit_detail,comp_verified_tc,burden_verified';
+const COLS = 'id,title,company,location,description,status,created_at,score,fit_score,fit_model_version,fit_detail,comp_verified_tc,burden_verified';
 const PAGE = 1000;
 
 // Always page the full table. --limit is applied AFTER filtering now: capping
@@ -130,6 +163,11 @@ async function loadJobs() {
   for (let from = 0; ; from += PAGE) {
     let q = supabase.from('jobs').select(COLS).order('created_at', { ascending: false });
     if (ONLY_NEW) q = q.is('fit_model_version', null);
+    // Status and recency filter in the query rather than in memory: this is
+    // the difference between reading 1100 rows and reading the handful that
+    // are actually candidates.
+    if (STATUSES) q = q.in('status', STATUSES);
+    if (SINCE)    q = q.gte('created_at', SINCE);
     const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) return { data: null, error };
     all.push(...(data || []));
@@ -145,6 +183,9 @@ if (error) { console.error('✗ Supabase read failed:', error.message); process.
 const reasons = new Map();   // job id -> why it was selected
 let pool = allJobs;
 const filtersApplied = [];
+
+if (STATUSES) filtersApplied.push(`status in ${STATUSES.join(' / ')}`);
+if (SINCE)    filtersApplied.push(`created since ${SINCE.slice(0, 10)}`);
 
 if (COMPANIES) {
   pool = pool.filter(j => COMPANIES.some(c => (j.company || '').toLowerCase().includes(c)));
@@ -164,10 +205,25 @@ if (STALE) {
   filtersApplied.push('stale signals');
 }
 
+// A row with no JD text cannot be extracted from — the model sees a title and
+// a company and guesses. computeConfidence caps those at 20-30%, so the call
+// buys a number nobody should act on. Observed: 6 of 38 rows in the first
+// targeted run came back at 20% confidence, including a 83 and a 35 conjured
+// from titles alone. Skip them by default and say so.
+const thin = pool.filter(j => (j.description || '').trim().length < MIN_JD_CHARS);
+if (!INCLUDE_THIN && thin.length) {
+  pool = pool.filter(j => (j.description || '').trim().length >= MIN_JD_CHARS);
+}
+
 const selected = LIMIT ? pool.slice(0, LIMIT) : pool;
 
 console.log(`  ${allJobs.length} row(s) in the table`);
 if (filtersApplied.length) console.log(`  filters: ${filtersApplied.join(' AND ')}`);
+if (thin.length) {
+  console.log(`  ${thin.length} row(s) have under ${MIN_JD_CHARS} chars of JD text — ${INCLUDE_THIN
+    ? 'INCLUDED via --include-thin; expect ~20% confidence on these'
+    : 'skipped, nothing to extract from (use --include-thin to override)'}`);
+}
 console.log(`  ${pool.length} match${LIMIT && pool.length > LIMIT ? `, capped at ${LIMIT}` : ''}`);
 console.log(`  ${selected.length} job(s) to process — ${selected.length} Claude call(s)\n`);
 
