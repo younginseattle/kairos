@@ -244,6 +244,36 @@ check("BMC does NOT hit the illiquid-equity gate (cash-heavy package at a PE-own
 console.log("\n" + "=".repeat(76));
 console.log("BEHAVIOURAL INVARIANTS");
 
+// ── Title band is the single most consequential extraction field ──
+// Lambda's "Manager, Group Product Manager - Platform" — a first-line manager
+// owning one product group among several — scored 43 through two model fixes
+// because the extraction classified it outside the target band. Everything
+// else about the role was right; that one enum cost 42 points.
+const lambdaPlatform = {
+  company: "Lambda",
+  domain: { primary: "non_interchangeable" },
+  nonInterchangeableMatches: [
+    { proof: "telemetry_econ", strength: "direct" },
+    { proof: "usage_metering", strength: "direct" },
+  ],
+  statedBase: 360.5,
+  locationPosture: ["hybrid_local", "hybrid_remote"],
+  knownGaps: [{ gap: "gpu_infra", level: "preferred" }],
+  jdChars: 6000,
+};
+const asTarget   = computeFit({ ...lambdaPlatform, titleBand: "target" });
+const asOrgOwner = computeFit({ ...lambdaPlatform, titleBand: "org_owner" });
+
+check("a correctly-banded group PM role reaches the apply tiers",
+  asTarget.score >= 80, `scored ${asTarget.score}`);
+check("misreading it as org_owner costs more than 35 points",
+  asTarget.score - asOrgOwner.score > 35,
+  `target ${asTarget.score} vs org_owner ${asOrgOwner.score}`);
+check("the out-of-band gate is what does the damage",
+  asOrgOwner.gates.some(g => g.reason === "outside target level band"));
+check("and it makes the role auto-passable — hidden, not just low",
+  shouldAutoPass(asOrgOwner).pass === true, shouldAutoPass(asOrgOwner).reason);
+
 // ── Multi-site postings ──────────────────────────────────────────
 // The Lambda platform role: "Bellevue or San Francisco, 4 days per week".
 // Reading only the Bay Area site turned a 20-minute commute into a 58-point

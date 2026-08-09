@@ -45,6 +45,11 @@ const PLAN     = process.argv.includes('--plan');
 const ONLY_NEW = process.argv.includes('--only-new');
 const STALE    = process.argv.includes('--stale-signals');
 const MISSING  = process.argv.includes('--missing-extraction');
+const INCLUDE_THIN = process.argv.includes('--include-thin');
+
+// Below this, the JD carries no usable evidence and the extraction is a guess
+// off the title. Matches the ceiling boundary in computeConfidence().
+const MIN_JD_CHARS = 300;
 const limitArg = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT    = limitArg ? parseInt(limitArg.split('=')[1], 10) : null;
 const compArg  = process.argv.find(a => a.startsWith('--company='));
@@ -164,10 +169,25 @@ if (STALE) {
   filtersApplied.push('stale signals');
 }
 
+// A row with no JD text cannot be extracted from — the model sees a title and
+// a company and guesses. computeConfidence caps those at 20-30%, so the call
+// buys a number nobody should act on. Observed: 6 of 38 rows in the first
+// targeted run came back at 20% confidence, including a 83 and a 35 conjured
+// from titles alone. Skip them by default and say so.
+const thin = pool.filter(j => (j.description || '').trim().length < MIN_JD_CHARS);
+if (!INCLUDE_THIN && thin.length) {
+  pool = pool.filter(j => (j.description || '').trim().length >= MIN_JD_CHARS);
+}
+
 const selected = LIMIT ? pool.slice(0, LIMIT) : pool;
 
 console.log(`  ${allJobs.length} row(s) in the table`);
 if (filtersApplied.length) console.log(`  filters: ${filtersApplied.join(' AND ')}`);
+if (thin.length) {
+  console.log(`  ${thin.length} row(s) have under ${MIN_JD_CHARS} chars of JD text — ${INCLUDE_THIN
+    ? 'INCLUDED via --include-thin; expect ~20% confidence on these'
+    : 'skipped, nothing to extract from (use --include-thin to override)'}`);
+}
 console.log(`  ${pool.length} match${LIMIT && pool.length > LIMIT ? `, capped at ${LIMIT}` : ''}`);
 console.log(`  ${selected.length} job(s) to process — ${selected.length} Claude call(s)\n`);
 
