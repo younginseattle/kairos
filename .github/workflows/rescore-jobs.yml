@@ -24,6 +24,14 @@ on:
           - missing-extraction   # no stored extraction — free replay can never reach these
           - all                  # every row. one call each.
         default: stale-signals
+      status:
+        description: "Only rows in these statuses, comma-separated. Blank = any status."
+        required: false
+        default: 'new'
+      since:
+        description: "Only rows created in the last N days (e.g. 7d) or since a date. Blank = no cutoff."
+        required: false
+        default: '7d'
       company:
         description: 'Optional company filter, comma-separated (e.g. lambda,crusoe). Blank = all companies.'
         required: false
@@ -63,6 +71,8 @@ jobs:
             stale-signals)      ARGS="$ARGS --stale-signals" ;;
             missing-extraction) ARGS="$ARGS --missing-extraction" ;;
           esac
+          if [ -n "${{ inputs.status }}" ];  then ARGS="$ARGS --status=${{ inputs.status }}"; fi
+          if [ -n "${{ inputs.since }}" ];   then ARGS="$ARGS --since=${{ inputs.since }}"; fi
           if [ -n "${{ inputs.company }}" ]; then ARGS="$ARGS --company=${{ inputs.company }}"; fi
           if [ -n "${{ inputs.limit }}" ];   then ARGS="$ARGS --limit=${{ inputs.limit }}"; fi
           echo "Running: node scripts/rescore-jobs.mjs $ARGS"
