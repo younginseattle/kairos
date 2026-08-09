@@ -18,6 +18,8 @@
 
 import ws from 'ws';
 import * as cheerio from 'cheerio';
+import { dedupeBatch } from '../src/jobIdentity.js';
+import { loadJobIndex, upgradeExistingJob } from '../src/jobIndex.js';
 import { isRelevantTitle, explainTitle, looksLikeSeniorTitle } from '../src/titleFilter.js';
 
 // Must be set before @supabase/supabase-js is loaded — it checks
@@ -447,34 +449,15 @@ function buildSupabaseClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-// LinkedIn serves the same posting at both linkedin.com/jobs/view/{id}/ and
-// linkedin.com/comm/jobs/view/{id} (no trailing slash) — a real duplicate
-// missed several rows because they were inserted as different URL strings
-// for the same job id (e.g. by scripts/insert-linkedin-principal-pms.mjs,
-// which doesn't go through this file's URL construction). Dedup by the
-// extracted numeric id when the URL is a LinkedIn job link, so any variant
-// matches; fall back to exact string match for everything else.
-function extractLinkedInJobId(url) {
-  const m = /linkedin\.com\/(?:comm\/)?jobs\/view\/(\d+)/.exec(url || '');
-  return m ? m[1] : null;
-}
-
-async function urlExists(supabase, url) {
-  const jobId = extractLinkedInJobId(url);
-  // .limit(1) + array-length check rather than .maybeSingle() — the ilike
-  // pattern (and, given pre-existing duplicate rows, even an exact match in
-  // rare cases) can match more than one row, and .maybeSingle() throws if so.
-  const query = jobId
-    ? supabase.from('jobs').select('id').ilike('url', `%jobs/view/${jobId}%`)
-    : supabase.from('jobs').select('id').eq('url', url);
-  const { data, error } = await query.limit(1);
-  if (error) {
-    console.error(`  ✗ Supabase dedup check failed for ${url}:`, error.message);
-    return false; // assume not duplicate so we don't silently drop
-  }
-  return Array.isArray(data) && data.length > 0;
-}
-
+// Dedup runs against a loaded index rather than a per-URL query.
+//
+// URL matching alone (LinkedIn's /jobs/view/{id} vs /comm/jobs/view/{id})
+// only ever caught the same link twice. The roles arriving here are also
+// posted on the company's own ATS board and picked up by src/ingestion.js
+// under a completely different URL — which is how one role ended up in the
+// pipeline three times. The index keys on company+title as well, so a role
+// already discovered elsewhere is recognised no matter which site it came
+// from. See src/jobIdentity.js.
 async function insertJob(supabase, job) {
   const { error } = await supabase.from('jobs').insert({
     title:    job.title,
@@ -510,33 +493,44 @@ async function main() {
   console.log('── Parsing job listings…');
   const allJobs = bodies.flatMap((body, i) => parseJobsFromEmail(body, i));
 
-  // Dedup within this batch by URL
-  const seen     = new Set();
-  const uniqueJobs = allJobs.filter(j => {
-    if (seen.has(j.url)) return false;
-    seen.add(j.url);
-    return true;
-  });
-  console.log(`  Parsed ${uniqueJobs.length} unique job(s) from emails\n`);
+  // Dedup within this batch — by URL and by company+title, since the same
+  // role shows up across several alert emails with different links.
+  const tagged = allJobs.map(j => ({ ...j, source: 'linkedin_alert' }));
+  const { unique: uniqueJobs, duplicates } = dedupeBatch(tagged);
+  console.log(`  Parsed ${uniqueJobs.length} unique job(s) from emails` +
+              (duplicates.length ? ` (${duplicates.length} cross-posted duplicate(s) collapsed)` : '') + '\n');
 
   if (uniqueJobs.length === 0) {
     console.log('  Nothing to insert. Done.');
     return;
   }
 
-  // 3. Dedup against Supabase and insert
+  // 3. Dedup against the existing pipeline and insert
   console.log('── Inserting into Supabase…');
-  let inserted = 0, skipped = 0, failed = 0;
+  const index = await loadJobIndex(supabase, {
+    log:      msg => console.log(`  ${msg}`),
+    logError: msg => console.error(`  ✗ ${msg}`),
+  });
+  let inserted = 0, skipped = 0, failed = 0, upgraded = 0;
 
   for (const job of uniqueJobs) {
-    const exists = await urlExists(supabase, job.url);
-    if (exists) {
+    const existing = index.find(job);
+    if (existing) {
       skipped++;
+      if (existing.reason === 'identity') {
+        console.log(`  ≡ ${job.title} — ${job.company} (already in pipeline via ${existing.row.source || 'unknown source'})`);
+      }
+      const didUpgrade = await upgradeExistingJob(supabase, existing.row, job, {
+        log:      msg => console.log(msg),
+        logError: msg => console.error(`  ✗ ${msg}`),
+      });
+      if (didUpgrade) upgraded++;
       continue;
     }
     const ok = await insertJob(supabase, job);
     if (ok) {
       inserted++;
+      index.add({ ...job, source: 'linkedin_alert' });
       console.log(`  ✓ ${job.title} — ${job.company}`);
     } else {
       failed++;
@@ -546,6 +540,7 @@ async function main() {
   console.log(`\n── Summary`);
   console.log(`   Inserted : ${inserted}`);
   console.log(`   Skipped  : ${skipped} (already in pipeline)`);
+  if (upgraded > 0) console.log(`   Upgraded : ${upgraded} (existing row repointed at a better source)`);
   if (failed > 0) console.log(`   Failed   : ${failed}`);
   console.log('   Done ✓\n');
 }
