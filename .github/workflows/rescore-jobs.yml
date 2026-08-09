@@ -1,0 +1,69 @@
+name: Rescore Jobs (re-extraction)
+
+# Re-reads job descriptions with Claude and rescores them. Unlike Recompute
+# Fit Scores, this COSTS ONE CLAUDE CALL PER ROW — it is the only way to pick
+# up changes to the extraction prompt or the signal vocabulary, which cannot
+# be replayed from stored extractions.
+#
+# Run with mode = plan first. That makes no API calls and prints exactly which
+# rows would be processed and why.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan = list selection, no API calls · dry-run = call Claude but do not write · write = call and persist'
+        type: choice
+        options: [plan, dry-run, write]
+        default: plan
+      selection:
+        description: 'Which rows to process'
+        type: choice
+        options:
+          - stale-signals        # extraction predates the current vocabulary
+          - missing-extraction   # no stored extraction — free replay can never reach these
+          - all                  # every row. one call each.
+        default: stale-signals
+      company:
+        description: 'Optional company filter, comma-separated (e.g. lambda,crusoe). Blank = all companies.'
+        required: false
+        default: ''
+      limit:
+        description: 'Max rows to process, applied after filtering. Blank = no cap.'
+        required: false
+        default: '25'
+
+jobs:
+  rescore:
+    name: Re-extract and rescore
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Rescore
+        env:
+          VITE_SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ARGS=""
+          case "${{ inputs.mode }}" in
+            plan)    ARGS="$ARGS --plan" ;;
+            dry-run) ARGS="$ARGS --dry-run" ;;
+          esac
+          case "${{ inputs.selection }}" in
+            stale-signals)      ARGS="$ARGS --stale-signals" ;;
+            missing-extraction) ARGS="$ARGS --missing-extraction" ;;
+          esac
+          if [ -n "${{ inputs.company }}" ]; then ARGS="$ARGS --company=${{ inputs.company }}"; fi
+          if [ -n "${{ inputs.limit }}" ];   then ARGS="$ARGS --limit=${{ inputs.limit }}"; fi
+          echo "Running: node scripts/rescore-jobs.mjs $ARGS"
+          node scripts/rescore-jobs.mjs $ARGS

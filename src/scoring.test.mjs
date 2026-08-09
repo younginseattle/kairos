@@ -66,7 +66,10 @@ const CASES = {
       ],
       statedTc: 400,
       locationPosture: "seattle",
-      knownGaps: [{ gap: "k8s_operators", level: "preferred" }],
+      // Carried a k8s_operators gap until 2026-08-06. Kubernetes, Helm
+      // authorship and operator patterns are working knowledge, so the gap
+      // key was retired and this anchor no longer claims it.
+      knownGaps: [],
       jdChars: 3500,
     },
   },
@@ -107,7 +110,9 @@ const CASES = {
       locationPosture: "remote",
       knownGaps: [
         { gap: "vendor_fluency", level: "required" },  // Elastic product depth
-        { gap: "k8s_operators", level: "required" },   // Helm / operators
+        // The Helm/operators gap this application acknowledged is no longer a
+        // gap — retired 2026-08-06. The outcome line above is left as the
+        // historical record of what was said at the time.
       ],
       jdChars: 2800,
     },
@@ -238,6 +243,64 @@ check("BMC does NOT hit the illiquid-equity gate (cash-heavy package at a PE-own
 
 console.log("\n" + "=".repeat(76));
 console.log("BEHAVIOURAL INVARIANTS");
+
+// ── Multi-site postings ──────────────────────────────────────────
+// The Lambda platform role: "Bellevue or San Francisco, 4 days per week".
+// Reading only the Bay Area site turned a 20-minute commute into a 58-point
+// burden penalty, and would have tripped the relocation auto-pass if the
+// posting had said "relocate to SF or work from Bellevue".
+const multiSite = { ...CASES.coreweave.signals, company: "Lambda",
+  locationPosture: ["hybrid_local", "hybrid_remote"] };
+const sfOnly    = { ...multiSite, locationPosture: "hybrid_remote" };
+const localOnly = { ...multiSite, locationPosture: "hybrid_local" };
+
+check("a choice of sites scores on the best option, not the worst",
+  computeFit(multiSite).score === computeFit(localOnly).score,
+  `${computeFit(multiSite).score} vs local-only ${computeFit(localOnly).score}`);
+check("a choice of sites beats being read as Bay-Area-only",
+  computeFit(multiSite).score > computeFit(sfOnly).score,
+  `${computeFit(multiSite).score} vs ${computeFit(sfOnly).score}`);
+check("the offered alternatives are disclosed in the burden explanation",
+  /best of 2 offered sites/.test(computeFit(multiSite).explanations.burden),
+  computeFit(multiSite).explanations.burden);
+
+const reloOrLocal = computeFit({ ...multiSite, locationPosture: ["office_relocation", "seattle"] });
+check("relocation gate does NOT fire when a local option is offered",
+  !reloOrLocal.gates.some(g => g.reason === "relocation required"));
+check("a relocation-or-local role is therefore never auto-passed",
+  shouldAutoPass(reloOrLocal).pass === false, shouldAutoPass(reloOrLocal).reason);
+
+const reloOnly = computeFit({ ...multiSite, locationPosture: ["office_relocation"] });
+check("relocation gate still fires when relocation is the only option",
+  reloOnly.gates.some(g => g.reason === "relocation required"));
+
+// ── Kubernetes is a strength, not a gap ──────────────────────────
+const withStaleK8sGap = computeFit({ ...CASES.elastic.signals,
+  knownGaps: [{ gap: "k8s_operators", level: "required" }] });
+const withNoGap = computeFit({ ...CASES.elastic.signals, knownGaps: [] });
+check("the retired k8s_operators key no longer deducts",
+  withStaleK8sGap.math.gap_penalty === withNoGap.math.gap_penalty,
+  `${withStaleK8sGap.math.gap_penalty} vs ${withNoGap.math.gap_penalty}`);
+
+const withK8sProof = computeFit({ ...CASES.coreweave.signals,
+  nonInterchangeableMatches: [...CASES.coreweave.signals.nonInterchangeableMatches,
+    { proof: "k8s_platform", strength: "direct" }] });
+check("k8s_platform is creditable as a proof point",
+  withK8sProof.subscores.non_interchangeability > results.coreweave.subscores.non_interchangeability,
+  `${withK8sProof.subscores.non_interchangeability} vs ${results.coreweave.subscores.non_interchangeability}`);
+
+// ── Platform-role proof points ───────────────────────────────────
+// A platform group owning metering/billing and identity/security could cite
+// no proof key at all, so a real match capped at 63 on the differentiator.
+const platformRole = computeFit({ ...CASES.coreweave.signals, company: "Lambda",
+  nonInterchangeableMatches: [
+    { proof: "telemetry_econ", strength: "direct" },
+    { proof: "usage_metering", strength: "direct" },
+    { proof: "identity_security", strength: "partial" },
+  ] });
+check("metering and identity evidence lifts non-interchangeability above the old cap",
+  platformRole.subscores.non_interchangeability > 63,
+  `${platformRole.subscores.non_interchangeability}`);
 
 // Unknown is not neutral.
 const elasticUnknownCo = computeFit({ ...CASES.elastic.signals, company: "Some Company Nobody Curated" });

@@ -30,6 +30,11 @@ CAREER
 
 OPEN SOURCE: OpenStack, CNCF, CDF, Puppet core product ownership.
 
+PLATFORM ENGINEERING FLUENCY: Working Kubernetes knowledge — Helm chart authorship and
+operator patterns, cloud-native deployment and packaging. Cloud-native telemetry at
+200K+ containers per cluster at Wavefront. Treat a Kubernetes, Helm or operator
+requirement as MET, not as a gap.
+
 WHAT HE IS ACTUALLY OPTIMIZING FOR (this is not negotiable and is frequently missed):
 He is DELIBERATELY targeting Senior Director, Group PM, Staff, or Principal roles at
 established companies. He is stepping back from CPO and VP-of-everything scope ON PURPOSE
@@ -53,7 +58,8 @@ Schema:
   "stated_base": number | null,
   "stated_variable": number | null,
   "comp_note": "what the posting actually said about money, or 'not stated'",
-  "location_posture": "remote" | "seattle" | "hybrid_local" | "hybrid_remote" | "office_relocation",
+  "location_posture": one of the enum values below, OR an array of them when the
+                      posting offers a choice of sites,
   "on_call": boolean,
   "travel_heavy": boolean,
   "known_gaps": [ { "gap": "<gap key>", "level": "required" | "preferred", "why": "one sentence" } ],
@@ -88,11 +94,17 @@ and the blend is what surfaces the real risk. Do not force a single class to be 
 ── NON-INTERCHANGEABILITY PROOF KEYS ──
 Emit a match ONLY when the JD describes a specific problem he has already solved. Generic
 senior-product-leader vocabulary is NOT a match — leave the array empty in that case.
-  "mcp_agentic"    — MCP-based agentic infrastructure (built at Domotz before BMC announced Agent Gateway)
-  "telemetry_econ" — high-cardinality telemetry and observability economics (Wavefront)
-  "agent_fleet"    — agent-based fleet management at 10M+ endpoint scale (Puppet)
-  "gitops_cicd"    — GitOps and CI/CD (Puppet Pipelines, Disney)
-  "open_source"    — OpenStack / CNCF / CDF track record, co-created Monasca
+  "mcp_agentic"       — MCP-based agentic infrastructure (built at Domotz before BMC announced Agent Gateway)
+  "telemetry_econ"    — high-cardinality telemetry and observability economics (Wavefront)
+  "agent_fleet"       — agent-based fleet management at 10M+ endpoint scale (Puppet)
+  "gitops_cicd"       — GitOps and CI/CD (Puppet Pipelines, Disney)
+  "open_source"       — OpenStack / CNCF / CDF track record, co-created Monasca
+  "usage_metering"    — consumption-based pricing, metering and billing for infrastructure usage
+                        (telemetry ingestion pricing at Wavefront, SaaS pricing and ARR at Domotz)
+  "identity_security" — enterprise identity, RBAC, policy and compliance surfaces
+                        (Fortune 100 fleet policy at Puppet, network security monitoring at Domotz)
+  "k8s_platform"      — Kubernetes platform depth: Helm chart authorship, operator patterns,
+                        cloud-native packaging and telemetry at 200K+ containers per cluster
 "direct" = the JD names this problem. "partial" = clearly adjacent but not the same problem.
 
 ── KNOWN GAP KEYS ──
@@ -101,8 +113,11 @@ Emit only when the JD actually asks for it. "required" if listed as a requiremen
   "gpu_infra"      — GPU infrastructure
   "microvm"        — MicroVM / Firecracker
   "mlflow"         — direct MLflow ownership / ML training platforms
-  "k8s_operators"  — Kubernetes operators, Helm chart authorship
   "vendor_fluency" — deep single-vendor internal product knowledge an internal hire would have
+
+Kubernetes, Helm and operators are NOT a gap — see PLATFORM ENGINEERING FLUENCY in the
+candidate profile. A Kubernetes requirement is met; emit "k8s_platform" as a proof point
+instead of a gap.
 
 ── COMPENSATION ──
 Report ONLY what the posting states, in THOUSANDS of USD. 320 means $320,000.
@@ -129,7 +144,13 @@ corrupts the model.
 "office_relocation" — requires relocating
 
 Be literal. If the posting says "hybrid — 3 days in our San Francisco office", that is
-hybrid_remote and it is a serious negative, not a detail.`;
+hybrid_remote and it is a serious negative, not a detail.
+
+When the posting offers a CHOICE of sites, return ALL of them as an array — the
+candidate picks, so the role is scored on the option he would actually take.
+"Bellevue or San Francisco, 4 days per week" is ["hybrid_local", "hybrid_remote"],
+NOT hybrid_remote. Returning only the non-Seattle site turns a local job into a
+Bay Area job. A single site is still a plain string.`;
 
 /** Builds the user message for an extraction call. */
 export function buildFitUserMessage({ title, company, location, jd }) {
