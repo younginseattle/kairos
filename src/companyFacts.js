@@ -99,6 +99,51 @@ const FACTS = {
   "ibm":         { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "mid" },
   "salesforce":  { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" },
   "domotz":      { tier: "small",       ownership: "startup", equity: "illiquid", vpBackground: "asset",    remote: "remote_first", tcBand: "below" },
+
+  // ── Companies onboarded 2026-08-06 with the SOURCES expansion ──
+  // Every board added in that pass was absent here, so each of their roles
+  // scored with vpBackground "neutral", a default 0.70 cash share and a 15
+  // point confidence deduction — the Lambda platform role capped at 80 on a
+  // flawless read purely for want of a row.
+  //
+  // NOTE: these are estimates from public information (headcount, funding
+  // stage, posted ranges), not verified like the calibration-set rows above.
+  // tcBand only ever applies when a posting states no salary. Correct any row
+  // that reads wrong — a wrong fact here is worse than no fact.
+
+  // AI / GPU infrastructure
+  "lambda":      { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "hybrid",       tcBand: "top" },
+  "crusoe":      { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" },
+  "nebius":      { tier: "growth",      ownership: "public",  equity: "liquid",   vpBackground: "neutral",  remote: "hybrid",       tcBand: "strong" },
+  "cerebras":    { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "mismatch", remote: "hybrid",       tcBand: "strong" },
+  "modal":       { tier: "small",       ownership: "startup", equity: "illiquid", vpBackground: "neutral",  remote: "hybrid",       tcBand: "mid" },
+  "anyscale":    { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "hybrid",       tcBand: "strong" },
+  "togetherai":  { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "hybrid",       tcBand: "strong" },
+  "baseten":     { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "hybrid",       tcBand: "strong" },
+  "langchain":   { tier: "small",       ownership: "startup", equity: "illiquid", vpBackground: "neutral",  remote: "hybrid",       tcBand: "mid" },
+
+  // Data / analytics infrastructure
+  "clickhouse":  { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "remote_first", tcBand: "strong" },
+  "startree":    { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "remote_first", tcBand: "mid" },
+  "materialize": { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "mid" },
+  "airbyte":     { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "mid" },
+  "prefect":     { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "mid" },
+  "astronomer":  { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "remote_first", tcBand: "strong" },
+
+  // Observability
+  "sentry":      { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" },
+  "influxdata":  { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "remote_first", tcBand: "mid" },
+  "auvik":       { tier: "growth",      ownership: "pe",      equity: "illiquid", vpBackground: "asset",    remote: "remote_first", tcBand: "mid" },
+
+  // Developer platforms / cloud
+  "pulumi":      { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" }, // Seattle HQ
+  "qumulo":      { tier: "established", ownership: "private", equity: "semi",     vpBackground: "asset",    remote: "hybrid",       tcBand: "mid"    }, // Seattle HQ
+  "render":      { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "mid" },
+  "supabase":    { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "strong" },
+  "circleci":    { tier: "established", ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "mid" },
+  "sourcegraph": { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "strong" },
+  "neon":        { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "mid" },
+  "linear":      { tier: "small",       ownership: "private", equity: "semi",     vpBackground: "mismatch", remote: "remote_first", tcBand: "strong" },
 };
 
 /** Aliases → canonical key. Handles ATS slugs and common name variants. */
@@ -123,6 +168,20 @@ const ALIASES = {
   "gleanwork": "glean",
   "chronospherejobs": "chronosphere",
   "puppet labs": "puppet", "perforce": "puppet",
+  // ATS board tokens and display names for the 2026-08-06 SOURCES expansion.
+  // The `company` column is whatever the board reports — usually the token —
+  // so these must map or the facts row is never found.
+  "pulumicorporation": "pulumi", "pulumi corporation": "pulumi",
+  "auviknetworks": "auvik", "auvik networks": "auvik",
+  "sourcegraph91": "sourcegraph",
+  "together ai": "togetherai", "together": "togetherai",
+  "modal labs": "modal",
+  "lambda labs": "lambda", "lambdalabs": "lambda", "lambda ai": "lambda",
+  "crusoe energy": "crusoe", "crusoeenergy": "crusoe",
+  "influxdb": "influxdata", "influx data": "influxdata",
+  "clickhouse inc": "clickhouse",
+  "neon database": "neon", "neondatabase": "neon",
+  "dagster labs": "dagsterlabs",
 };
 
 /**

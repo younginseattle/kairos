@@ -153,6 +153,9 @@ Matt Young — VP/Director-level Product leader.
 - **Target domains:** Observability, infrastructure, platform SaaS, AI/ML tooling
 - **Location:** Seattle, WA — no relocation. Remote-first preferred.
 - **Experience:** 10+ years, comfortable at Director/VP level
+- **Platform fluency:** Working Kubernetes knowledge — Helm chart authorship and operator
+  patterns. This is a strength, not a gap; it is a proof point (`k8s_platform`), and the
+  old `k8s_operators` gap key was retired on 2026-08-06.
 - **Scoring bias:** Do not penalize for "overqualified" at Director level
 
 The full candidate profile string is defined inside `ingestion.js` as `candidateProfile` and inside `App.jsx` as `profile`.

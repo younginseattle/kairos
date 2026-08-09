@@ -209,6 +209,7 @@ Experience:
 
 Core strengths:
 - Platform & API-first products (infrastructure, observability, developer tools)
+- Working Kubernetes knowledge — Helm chart authorship, operator patterns, cloud-native packaging
 - Scaling SaaS businesses — ARR growth, retention, PLG motions
 - Leading cross-functional teams of PMs and engineers
 - Data-driven product strategy and roadmap prioritization
