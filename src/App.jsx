@@ -1,8 +1,10 @@
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { supabase } from './supabaseClient'
 import { computeFit, scoreBand } from "./scoring.js";
 import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
 import { runJobIngestion, SOURCES, isRelevantJob } from './ingestion.js'
+import { JobIndex } from './jobIndex.js'
+import { dedupeBatch } from './jobIdentity.js'
 import NetworkView from './NetworkView.jsx'
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1458,6 +1460,15 @@ export default function JobSearchAgent() {
 
   // Saved
   const [supabaseJobs,    setSupabaseJobs]    = useState([]);
+  // Duplicate lookup over the pipeline already in memory — matches on
+  // company+title as well as URL, so a role saved here that ingestion already
+  // found on the company's own board doesn't become a second row.
+  // See src/jobIdentity.js. Held in a ref (not derived state) so a save loop
+  // can register each row as it lands, before React re-renders.
+  const pipelineIndexRef = useRef(new JobIndex());
+  useEffect(() => { pipelineIndexRef.current = new JobIndex(supabaseJobs); }, [supabaseJobs]);
+  const findPipelineDuplicate = (job) => pipelineIndexRef.current.find(job)?.row || null;
+  const notePipelineJob      = (job) => pipelineIndexRef.current.add(job);
   const [supabaseLoading, setSupabaseLoading] = useState(true);
   const [supabaseError,   setSupabaseError]   = useState("");
   const [reEvalRunning,   setReEvalRunning]   = useState(false);
@@ -1547,12 +1558,11 @@ export default function JobSearchAgent() {
     const ae = autoEvalScores[job.url];
     if (!ae || typeof ae !== "object" || ae.status !== "done") return;
     const { result, jd } = ae;
-    if (job.url) {
-      const { data: existing } = await supabase.from('jobs').select('id').eq('url', job.url).maybeSingle();
-      if (existing) {
-        setQuickScoring(prev => { const next = { ...prev, [job.url]: "saved" }; localStorage.setItem("jsa_quick_scoring", JSON.stringify(next)); return next; });
-        return;
-      }
+    // Same role, different site — a LinkedIn alert for a job already in the
+    // pipeline from its own ATS board matches on company+title, not just URL.
+    if (findPipelineDuplicate(job)) {
+      setQuickScoring(prev => { const next = { ...prev, [job.url]: "saved" }; localStorage.setItem("jsa_quick_scoring", JSON.stringify(next)); return next; });
+      return;
     }
     const fields = {
       title: job.title || "LinkedIn Alert", company: job.company || "", url: job.url || "",
@@ -1570,6 +1580,7 @@ export default function JobSearchAgent() {
     };
     const { error } = await supabase.from('jobs').insert(fields);
     if (error) { console.error(error); return; }
+    notePipelineJob(fields);
     setSupabaseJobs(prev => [{ id: crypto.randomUUID(), created_at: new Date().toISOString(), ...fields }, ...prev]);
     setQuickScoring(prev => { const next = { ...prev, [job.url]: "saved" }; localStorage.setItem("jsa_quick_scoring", JSON.stringify(next)); return next; });
   }
@@ -1599,15 +1610,17 @@ export default function JobSearchAgent() {
       return;
     }
 
-    // Dedup against Supabase jobs already saved + existing emailJobs staging
-    const savedUrls = new Set([
-      ...supabaseJobs.map(j => j.url),
-      ...emailJobs.map(j => j.url),
-    ]);
+    // Dedup against Supabase jobs already saved + existing emailJobs staging.
+    // Identity-based, not URL-based: the briefing lists roles by whatever link
+    // it found them under, which is rarely the ATS link ingestion stored.
+    const stagedIndex = new JobIndex([...supabaseJobs, ...emailJobs]);
 
-    const newJobs = relevant
-      .filter(j => !savedUrls.has(j.url))
-      .map(j => ({ title: j.title, company: j.company, location: j.location || "Remote", url: j.url, source: "linkedin_alert" }));
+    const candidates = relevant
+      .map(j => ({ title: j.title, company: j.company, location: j.location || "Remote", url: j.url, source: "linkedin_alert" }))
+      .filter(j => !stagedIndex.find(j));
+
+    // …and against each other, in case the briefing itself lists one role twice.
+    const newJobs = dedupeBatch(candidates).unique;
 
     const skipped = relevant.length - newJobs.length;
 
@@ -1666,6 +1679,12 @@ export default function JobSearchAgent() {
   }
 
 async function doQuickScore(job) {
+    // Already in the pipeline — possibly under the ATS URL rather than this
+    // LinkedIn one. Mark it saved and insert nothing.
+    if (findPipelineDuplicate(job)) {
+      setQuickScoring(prev => { const next = { ...prev, [job.url]: "saved" }; localStorage.setItem("jsa_quick_scoring", JSON.stringify(next)); return next; });
+      return;
+    }
     setQuickScoring(prev => { const next = { ...prev, [job.url]: "scoring" }; localStorage.setItem("jsa_quick_scoring", JSON.stringify(next)); return next; });
     try {
       // Check if autoeval already scored this job — use those results if available
@@ -1697,6 +1716,7 @@ async function doQuickScore(job) {
         confidence_score:        r?.confidence              ?? null,
       });
       if (error) throw new Error(error.message);
+      notePipelineJob({ title: job.title || "LinkedIn Alert", company: job.company || "", url: job.url || "", source: "linkedin_alert" });
       setSupabaseJobs(prev => [{
         id: crypto.randomUUID(), created_at: new Date().toISOString(),
         title: job.title || "LinkedIn Alert", company: job.company || "",
@@ -1903,17 +1923,17 @@ async function doQuickScore(job) {
         if (error) throw new Error(error.message);
         setSupabaseJobs(prev => prev.map(j => j.id === manualJobId ? { ...j, ...fields } : j));
       } else {
-        // New job — check for duplicate then insert
-        if (manualUrl) {
-          const { data: existing } = await supabase.from('jobs').select('id').eq('url', manualUrl).maybeSingle();
-          if (existing) {
-            setEvalError("This role is already in your pipeline. Use → Re-evaluate from the Saved tab to update it.");
-            setSaving(false);
-            return;
-          }
+        // New job — check for duplicate then insert. Matches the same role
+        // already saved under a different site's URL, not just the same link.
+        const existing = findPipelineDuplicate(fields);
+        if (existing) {
+          setEvalError(`This role is already in your pipeline${existing.url && existing.url !== manualUrl ? ` (saved from ${existing.source || "another source"})` : ""}. Use → Re-evaluate from the Saved tab to update it.`);
+          setSaving(false);
+          return;
         }
         const { error } = await supabase.from('jobs').insert({ ...fields, status: 'new' });
         if (error) throw new Error(error.message);
+        notePipelineJob({ ...fields, status: 'new' });
         setSupabaseJobs(prev => [{ id: crypto.randomUUID(), created_at: new Date().toISOString(), ...fields, status: 'new' }, ...prev]);
       }
       setManualSaved(true);
