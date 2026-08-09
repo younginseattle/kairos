@@ -5,13 +5,26 @@
  *
  * Requires the 002_fit_scoring_v2.sql migration to have been run first.
  *
- *   node --env-file=.env scripts/rescore-jobs.mjs --dry-run
- *   node --env-file=.env scripts/rescore-jobs.mjs
- *   node --env-file=.env scripts/rescore-jobs.mjs --limit=10
+ *   node --env-file=.env scripts/rescore-jobs.mjs --plan
+ *   node --env-file=.env scripts/rescore-jobs.mjs --stale-signals --limit=10
+ *   node --env-file=.env scripts/rescore-jobs.mjs --company=lambda,crusoe
  *
- * --dry-run   compute and print, write nothing
- * --limit=N   only process N jobs (use this first — every job is one API call)
- * --only-new  skip jobs already carrying a fit_model_version
+ * SELECTION — every selected row is one Claude call, so narrow it first.
+ * --plan                 list what WOULD be processed and exit. Zero API calls.
+ *                        Unlike --dry-run, this costs nothing.
+ * --limit=N              cap at N rows, applied AFTER the filters below
+ * --company=a,b          only these companies (substring, case-insensitive)
+ * --stale-signals        only rows whose stored extraction predates the current
+ *                        signal vocabulary — see isStale() for what counts
+ * --missing-extraction   only rows with no stored extraction at all. These
+ *                        cannot be replayed by recompute-scores.mjs at any
+ *                        price, so this is the bucket that only re-extraction
+ *                        can reach.
+ * --only-new             skip jobs already carrying a fit_model_version
+ *
+ * EXECUTION
+ * --dry-run   still calls Claude for every selected row; only the DB write is
+ *             skipped. Use --plan when the goal is to avoid spending calls.
  */
 
 // Supabase's realtime client wants a global WebSocket. Node 22 has one natively;
@@ -25,17 +38,28 @@ const { createClient } = await import('@supabase/supabase-js');
 
 const { computeFit, MODEL_VERSION } = await import('../src/scoring.js');
 const { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } = await import('../src/fitPrompt.js');
+const { staleReason } = await import('../src/staleSignals.js');
 
 const DRY_RUN  = process.argv.includes('--dry-run');
+const PLAN     = process.argv.includes('--plan');
 const ONLY_NEW = process.argv.includes('--only-new');
+const STALE    = process.argv.includes('--stale-signals');
+const MISSING  = process.argv.includes('--missing-extraction');
 const limitArg = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT    = limitArg ? parseInt(limitArg.split('=')[1], 10) : null;
+const compArg  = process.argv.find(a => a.startsWith('--company='));
+const COMPANIES = compArg
+  ? compArg.split('=')[1].toLowerCase().split(',').map(s => s.trim()).filter(Boolean)
+  : null;
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_KEY;
 
-for (const [k, v] of [['SUPABASE_URL', SUPABASE_URL], ['SUPABASE key', SUPABASE_KEY], ['ANTHROPIC_API_KEY', ANTHROPIC_KEY]]) {
+// --plan makes no API calls, so it must not demand an Anthropic key.
+const required = [['SUPABASE_URL', SUPABASE_URL], ['SUPABASE key', SUPABASE_KEY]];
+if (!PLAN) required.push(['ANTHROPIC_API_KEY', ANTHROPIC_KEY]);
+for (const [k, v] of required) {
   if (!v) { console.error(`✗ Missing ${k}`); process.exit(1); }
 }
 
@@ -94,26 +118,87 @@ console.log(`\n◆ Rescore with ${MODEL_VERSION}${DRY_RUN ? '  [DRY RUN — no w
 // PostgREST caps a single select at db-max-rows (1000 on Supabase) SILENTLY —
 // no error, no flag. The pipeline is already past that, so a bare select here
 // would quietly skip the oldest rows. Page unless an explicit --limit is set.
-const COLS = 'id,title,company,location,description,score,fit_score,fit_model_version,comp_verified_tc,burden_verified';
+const COLS = 'id,title,company,location,description,status,score,fit_score,fit_model_version,fit_detail,comp_verified_tc,burden_verified';
 const PAGE = 1000;
+
+// Always page the full table. --limit is applied AFTER filtering now: capping
+// at fetch time would take the N most recent rows and then filter those down,
+// so "--company=lambda --limit=10" could return nothing while ten Lambda rows
+// sat further down the table.
 async function loadJobs() {
   const all = [];
   for (let from = 0; ; from += PAGE) {
     let q = supabase.from('jobs').select(COLS).order('created_at', { ascending: false });
     if (ONLY_NEW) q = q.is('fit_model_version', null);
-    const take = LIMIT ? Math.min(PAGE, LIMIT - all.length) : PAGE;
-    const { data, error } = await q.range(from, from + take - 1);
+    const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) return { data: null, error };
     all.push(...(data || []));
-    if (!data || data.length < take) break;
-    if (LIMIT && all.length >= LIMIT) break;
+    if (!data || data.length < PAGE) break;
   }
   return { data: all, error: null };
 }
 
-const { data: jobs, error } = await loadJobs();
+const { data: allJobs, error } = await loadJobs();
 if (error) { console.error('✗ Supabase read failed:', error.message); process.exit(1); }
-console.log(`  ${jobs.length} job(s) to process\n`);
+
+// ── Selection ─────────────────────────────────────────────────────
+const reasons = new Map();   // job id -> why it was selected
+let pool = allJobs;
+const filtersApplied = [];
+
+if (COMPANIES) {
+  pool = pool.filter(j => COMPANIES.some(c => (j.company || '').toLowerCase().includes(c)));
+  filtersApplied.push(`company matches ${COMPANIES.join(' / ')}`);
+}
+if (MISSING) {
+  pool = pool.filter(j => !j.fit_detail?.extraction);
+  pool.forEach(j => reasons.set(j.id, 'no stored extraction'));
+  filtersApplied.push('no stored extraction');
+}
+if (STALE) {
+  pool = pool.filter(j => {
+    const why = staleReason(j);
+    if (why) reasons.set(j.id, why);
+    return why != null;
+  });
+  filtersApplied.push('stale signals');
+}
+
+const selected = LIMIT ? pool.slice(0, LIMIT) : pool;
+
+console.log(`  ${allJobs.length} row(s) in the table`);
+if (filtersApplied.length) console.log(`  filters: ${filtersApplied.join(' AND ')}`);
+console.log(`  ${pool.length} match${LIMIT && pool.length > LIMIT ? `, capped at ${LIMIT}` : ''}`);
+console.log(`  ${selected.length} job(s) to process — ${selected.length} Claude call(s)\n`);
+
+if (!filtersApplied.length && selected.length > 100 && !PLAN) {
+  console.log(`  ⚠  No selection filter set: this will re-extract ${selected.length} rows.`);
+  console.log(`     Narrow with --stale-signals / --company= / --limit=, or run --plan first.\n`);
+}
+
+// ── Plan mode — spend nothing, just show the work ─────────────────
+if (PLAN) {
+  const byReason = {};
+  for (const j of selected) {
+    const why = reasons.get(j.id) || staleReason(j) || 'current — no re-extraction needed';
+    (byReason[why] ||= []).push(j);
+  }
+  console.log('='.repeat(96));
+  console.log('SELECTION PLAN — no API calls made');
+  console.log('='.repeat(96));
+  for (const [why, list] of Object.entries(byReason).sort((a, b) => b[1].length - a[1].length)) {
+    console.log(`\n  ${list.length} × ${why}`);
+    for (const j of list.slice(0, 8)) {
+      console.log(`      ${String(j.score ?? '–').padStart(3)}  ${(j.title || '').slice(0, 46).padEnd(46)} ${(j.company || '').slice(0, 20)}`);
+    }
+    if (list.length > 8) console.log(`      … and ${list.length - 8} more`);
+  }
+  console.log(`\n  Running without --plan would make ${selected.length} Claude call(s).\n`);
+  process.exit(0);
+}
+
+const jobs = selected;
+if (!jobs.length) { console.log('  Nothing selected — no work to do.\n'); process.exit(0); }
 
 const rows = [];
 let ok = 0, failed = 0;

@@ -104,6 +104,26 @@ Node.js script. Reads env from `.env` file. Calls `runJobIngestion`. Run as:
 node --env-file=.env src/run-ingestion.mjs
 ```
 
+### Rescoring existing rows
+Two paths, and the difference is money:
+
+- `scripts/recompute-scores.mjs` — replays `scoring.js` / `companyFacts.js` changes
+  over stored extractions. **Free, no Claude calls.** Only reaches rows that have a
+  `fit_detail.extraction`. Add `--restore-passed` to un-hide rows the legacy `<55`
+  rule buried that the current structural rule would not hide.
+- `scripts/rescore-jobs.mjs` — re-reads each JD with Claude. **One call per row.**
+  The only way to pick up changes to `fitPrompt.js` or the signal vocabulary.
+  Narrow the selection first: `--plan` (costs nothing) then `--stale-signals`,
+  `--missing-extraction`, `--company=`, `--limit=`.
+
+`--dry-run` on rescore-jobs still calls Claude — only the write is skipped. Use
+`--plan` to spend nothing. Which rows are stale is decided by `src/staleSignals.js`,
+pinned by `src/staleSignals.test.mjs`.
+
+Both have workflow_dispatch workflows (`Recompute Fit Scores`, `Rescore Jobs`).
+**Both default to the repo's default branch** — pick the working branch in the
+Run workflow dropdown, or the run replays the old model and nothing moves.
+
 ### `src/run-briefing.mjs`
 Node.js script. Queries Supabase for last 24h jobs. Writes markdown briefing to `~/Desktop`. Run as:
 ```bash
