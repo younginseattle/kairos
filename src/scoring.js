@@ -153,6 +153,12 @@ export const PROOF_POINTS = {
   agent_fleet:    "Agent-based fleet management at 10M+ endpoint scale from Puppet",
   gitops_cicd:    "GitOps and CI/CD from Puppet Pipelines (Disney)",
   open_source:    "OpenStack / CNCF / CDF open source track record, co-created Monasca",
+  // Added after the Lambda diagnosis: a platform-group role built on
+  // metering/billing and identity/security could cite no proof point at all,
+  // so a genuinely strong match topped out at 63 on the differentiator.
+  usage_metering: "Consumption-based pricing and metering for telemetry ingestion at Wavefront; SaaS ARR, pricing and retention ownership at Domotz",
+  identity_security: "Enterprise RBAC, policy and compliance surfaces across Fortune 100 fleets at Puppet; network security monitoring at Domotz",
+  k8s_platform:   "Working Kubernetes platform knowledge — Helm chart authorship, operator patterns, cloud-native telemetry at 200K+ containers per cluster",
 };
 
 const BASE_NON_INTER = 30;
@@ -334,15 +340,38 @@ const LOCATION_POSTURE_SCORE = {
   office_relocation: 18,  // requires moving
 };
 
+/**
+ * A posting that offers a CHOICE of sites — "Bellevue or San Francisco" — is
+ * not a Bay Area role. The candidate picks, so the role should be scored on
+ * the option he would actually take.
+ *
+ * This was worth 58 points of burden on the Lambda platform role: the enum is
+ * single-valued, the extraction prompt says "be literal", so naming SF at all
+ * could pull the posture to hybrid_remote (32) when Bellevue (90) was on the
+ * table the whole time. Accepts a string or an array; an array resolves to its
+ * best-scoring member.
+ */
+export function bestPosture(locationPosture) {
+  if (!Array.isArray(locationPosture)) return locationPosture;
+  const known = locationPosture.filter(p => LOCATION_POSTURE_SCORE[p] != null);
+  if (!known.length) return locationPosture[0];
+  return known.reduce((a, p) => LOCATION_POSTURE_SCORE[p] > LOCATION_POSTURE_SCORE[a] ? p : a);
+}
+
 export function scoreBurden({ locationPosture, onCall = false, travelHeavy = false, companyFacts = null, burdenOverride = null }) {
   if (burdenOverride != null) {
     return { score: burdenOverride, note: `manual override (${burdenOverride}) — verified after recruiter contact` };
   }
-  const base = LOCATION_POSTURE_SCORE[locationPosture];
-  if (base == null) return { score: null, note: `unknown location posture "${locationPosture}"` };
+  const offered = Array.isArray(locationPosture) ? locationPosture : null;
+  const posture = bestPosture(locationPosture);
+  const base = LOCATION_POSTURE_SCORE[posture];
+  if (base == null) return { score: null, note: `unknown location posture "${posture}"` };
 
   let score = base;
-  const bits = [locationPosture.replace(/_/g, " ")];
+  const bits = [posture.replace(/_/g, " ")];
+  if (offered && offered.length > 1) {
+    bits.push(`best of ${offered.length} offered sites (${offered.map(p => p.replace(/_/g, " ")).join(" / ")})`);
+  }
   if (onCall)      { score -= 12; bits.push("on-call / always-on signals (-12)"); }
   if (travelHeavy) { score -= 10; bits.push("heavy travel (-10)"); }
   if (companyFacts?.tier === "growth") { score -= 8; bits.push("hyper-growth intensity (-8)"); }
@@ -359,8 +388,12 @@ export const KNOWN_GAPS = {
   gpu_infra:        { label: "GPU infrastructure",                      required: 8, preferred: 3 },
   microvm:          { label: "MicroVM / Firecracker",                   required: 8, preferred: 3 },
   mlflow:           { label: "Direct MLflow ownership / ML training",   required: 7, preferred: 3 },
-  k8s_operators:    { label: "Kubernetes operators / Helm authorship",  required: 6, preferred: 2 },
   vendor_fluency:   { label: "Deep single-vendor internal fluency",     required: 6, preferred: 2 },
+  // k8s_operators removed — Kubernetes, Helm authorship and operator
+  // patterns are working knowledge, not a gap. It is now a proof point
+  // (k8s_platform) instead. Rows stored before this change still carry the
+  // old key; scoreKnownGaps ignores unrecognised keys, so those simply stop
+  // deducting on the next re-score rather than erroring.
 };
 
 export function scoreKnownGaps(gaps = []) {
@@ -388,7 +421,10 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
   if (compResult?.tc != null && !compResult.estimated && compResult.tc < 300) {
     gates.push({ reason: "stated comp below $300K", ceiling: 55 });
   }
-  if (locationPosture === "office_relocation") {
+  // Only when relocation is the ONLY option. This gate is also an auto-pass
+  // trigger, so reading "Bellevue or San Francisco" as a relocation role would
+  // hide a local job outright.
+  if (bestPosture(locationPosture) === "office_relocation") {
     gates.push({ reason: "relocation required", ceiling: 50 });
   }
   // Fires only when the package actually DEPENDS on illiquid paper. A cash-heavy

@@ -172,10 +172,11 @@ Core strengths:
 - API-first, extensible platform products with large integration ecosystems
 - Enterprise SaaS scaling: PLG, ARR growth, land-and-expand, sub-2% churn
 - High-cardinality, cloud-scale data processing (Kubernetes-native, cloud-native)
+- Working Kubernetes knowledge: Helm chart authorship, operator patterns, cloud-native packaging
 - Cross-functional PM org leadership across engineering, GTM, executive stakeholders
 - Agent-based architecture and automated remediation / self-healing infrastructure
 
-Keywords: AI Observability · LLM Monitoring · Distributed Telemetry · MCP Architecture · Agentic Workflows · Kubernetes Observability · High-Cardinality Telemetry · MTTR Reduction · SLO-Driven Performance · Automated Remediation · API-First Platforms · Product-Led Growth · Cloud-Scale Data Processing · Platform Extensibility`;
+Keywords: AI Observability · LLM Monitoring · Distributed Telemetry · MCP Architecture · Agentic Workflows · Kubernetes Observability · Helm · Kubernetes Operators · High-Cardinality Telemetry · MTTR Reduction · SLO-Driven Performance · Automated Remediation · API-First Platforms · Product-Led Growth · Cloud-Scale Data Processing · Platform Extensibility`;
 // ═════════════════════════════════════════════════════════════════
 // DECISION ENGINE
 // ═════════════════════════════════════════════════════════════════
