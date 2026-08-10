@@ -215,7 +215,10 @@ Arize AI, Fiddler AI, Observe Inc, Galileo AI, Braintrust
 Anthropic, Databricks, Glean, Scale AI
 
 ### Infrastructure / Cloud / DevTools
-Cloudflare, CoreWeave, Temporal, LaunchDarkly, Vercel, Postman, dbt Labs, Harness, Fastly, Fivetran, Twilio, MongoDB, Stripe, GitLab, Smartsheet, Samsara
+Cloudflare, CoreWeave, Temporal, LaunchDarkly, Vercel, Postman, Harness, Fastly, Fivetran, Twilio, MongoDB, Stripe, GitLab, Smartsheet, Samsara
+
+Removed from `SOURCES` — see `RETIRED_SOURCES` in `src/candidateSources.js` before adding either back:
+**dbt Labs** (board token 404s as of 2026-08-10) and **Chronosphere** (acquired).
 
 ### Defense Tech
 Epirus (others — Anduril, Palantir, etc. — have locked Greenhouse boards)

@@ -75,7 +75,6 @@ export const SOURCES = [
   // ── Developer / software delivery tools ──────────────────────
   { id: "vercel",               ats: "greenhouse", tier: 2, domain: "devtools",       broadFilter: true },
   { id: "postman",              ats: "greenhouse", tier: 2, domain: "devtools"        },
-  { id: "dbtlabsinc",           ats: "greenhouse", tier: 2, domain: "platform"        },
   { id: "harnessinc",           ats: "greenhouse", tier: 1, domain: "devtools", broadFilter: true },
   
   // ── Platform / data / SaaS ────────────────────────────────────
@@ -91,7 +90,6 @@ export const SOURCES = [
   // ── Observability (expanded) ──────────────────────────────────
   { id: "cribl",             ats: "greenhouse", tier: 1, domain: "observability"             },
   { id: "kentik",            ats: "greenhouse", tier: 2, domain: "observability"             },
-  { id: "chronospherejobs",  ats: "ashby",      tier: 1, domain: "observability", broadFilter: true },
   { id: "montecarlodata",    ats: "ashby",      tier: 1, domain: "observability", broadFilter: true },
 
   // ── AI / ML platforms (expanded) ─────────────────────────────
