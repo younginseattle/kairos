@@ -213,6 +213,26 @@ differs("two different scoped roles at one company stay separate",
   jobIdentityKey({ company: "Stripe", title: "Staff Product Manager, Payments" }),
   jobIdentityKey({ company: "Stripe", title: "Staff Product Manager, Dashboard" }));
 
+
+// ── The job id is not tracking noise ─────────────────────────────
+// gh_jid matches the gh_ tracking prefix and was being stripped, so every
+// company that puts the id in the query string collapsed to one URL key:
+// all of Stripe became "stripe.com/jobs/search". Fifteen distinct Stripe
+// roles were queued for deletion as a single duplicate.
+console.log("\nThe listing id survives URL canonicalisation");
+
+differs("two Stripe listings keep distinct URL keys",
+  canonicalUrlKey("https://stripe.com/jobs/search?gh_jid=7550590"),
+  canonicalUrlKey("https://stripe.com/jobs/search?gh_jid=7819059"));
+
+differs("two Elastic listings keep distinct URL keys",
+  canonicalUrlKey("https://jobs.elastic.co/jobs?gh_jid=8067977"),
+  canonicalUrlKey("https://jobs.elastic.co/jobs?gh_jid=7950454"));
+
+same("real tracking noise around the same id still collapses",
+  canonicalUrlKey("https://stripe.com/jobs/search?gh_jid=7550590&gh_src=abc&utm_source=email"),
+  canonicalUrlKey("https://stripe.com/jobs/search?gh_jid=7550590"));
+
 console.log(`\n── ${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log("\nFailures:");
