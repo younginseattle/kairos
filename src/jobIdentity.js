@@ -219,6 +219,19 @@ export function extractLinkedInJobId(url) {
 const TRACKING_PARAMS = /^(utm_|gh_|lever-|ref$|refid$|source$|src$|trk$|trackingid$|eblt|midtoken|mid$)/i;
 
 /**
+ * Params that ARE the listing's identity and must survive canonicalisation,
+ * checked before TRACKING_PARAMS.
+ *
+ * `gh_jid` is the Greenhouse job id and matches the `gh_` tracking prefix, so
+ * it was being stripped as noise. For every company that puts the id in the
+ * query string rather than the path — Stripe, MongoDB, Databricks, Harness,
+ * Fastly, Fivetran, Elastic, Cribl, Arize — that collapsed the entire board
+ * to one key: every Stripe posting became "stripe.com/jobs/search". Fifteen
+ * distinct Stripe roles were queued for deletion as one duplicate.
+ */
+const IDENTITY_PARAMS = /^(gh_jid|jid|job_?id|posting_?id|req_?id|vacancy_?id)$/i;
+
+/**
  * Canonical URL key: protocol/host-case/trailing-slash/tracking-param
  * insensitive, so the same link in two shapes keys the same.
  */
@@ -232,7 +245,7 @@ export function canonicalUrlKey(url) {
   try {
     const u = new URL(raw);
     const params = [...u.searchParams.entries()]
-      .filter(([k]) => !TRACKING_PARAMS.test(k))
+      .filter(([k]) => IDENTITY_PARAMS.test(k) || !TRACKING_PARAMS.test(k))
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}=${v}`)
       .join("&");
