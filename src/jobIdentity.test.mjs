@@ -164,6 +164,55 @@ check("blank company never identity-matches",
 check("identity key is null without both halves", jobIdentityKey({ title: "Director, Product", company: "" }) === null);
 
 // ─────────────────────────────────────────────────────────────────
+
+// ── Generic titles are NOT identities ────────────────────────────
+// The first cleanup run proposed deleting 343 rows. Most were distinct jobs:
+// 22 Stripe roles, 38 Databricks roles and 30 Microsoft roles collapsed
+// because each company posts many different roles under one plain title.
+console.log("\nGeneric titles are not identities");
+
+for (const [company, title] of [
+  ["Stripe", "Staff Product Manager"],
+  ["Microsoft", "Principal Product Manager"],
+  ["Twilio", "Director, Product Management"],
+  ["Oracle", "Senior Director, Product Management"],
+  ["Acme", "Principal Product Manager, Technical"],
+]) {
+  check(`"${title}" at ${company} is url-match-only`,
+    jobIdentityKey({ company, title }) === null);
+}
+
+for (const [company, title] of [
+  ["Lambda", "Manager, Group Product Manager - Platform"],
+  ["Snowflake", "Principal Product Manager - Snowpark"],
+  ["ClickHouse", "Director of Product, ClickHouse Cloud"],
+  ["grafanalabs", "Senior Product Manager, Infrastructure Observability | US | Remote"],
+  ["Amazon", "Principal Product Manager - Technical, External Services, Amazon Aurora"],
+]) {
+  check(`"${title.slice(0, 44)}" still dedups`,
+    jobIdentityKey({ company, title }) !== null);
+}
+
+// The motivating cross-post case must still collapse: same role, two sites,
+// same words in a different order and with a different company spelling.
+same("a scoped role still matches across sources despite word order",
+  jobIdentityKey({ company: "Grafana Labs, Inc.", title: "Director, Product Management \u2014 Observability" }),
+  jobIdentityKey({ company: "grafanalabs",        title: "Observability \u2014 Product Management Director" }));
+
+// Not asserted: that "Director, Product Management \u2014 Observability" matches
+// "Observability Product Director". Those differ by a real word, and making
+// them match means dropping manager/management from the signature entirely \u2014
+// which is how distinct roles start colliding again. Order independence is
+// the guarantee; synonym-collapsing the function word is not.
+same("mgmt abbreviations fold into the same signature",
+  jobIdentityKey({ company: "Oracle", title: "Director, Product Mgmt \u2014 Cloud Storage" }),
+  jobIdentityKey({ company: "Oracle", title: "Director, Product Management, Cloud Storage" }));
+
+// Two DIFFERENT scoped roles at one company must stay apart.
+differs("two different scoped roles at one company stay separate",
+  jobIdentityKey({ company: "Stripe", title: "Staff Product Manager, Payments" }),
+  jobIdentityKey({ company: "Stripe", title: "Staff Product Manager, Dashboard" }));
+
 console.log(`\n── ${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log("\nFailures:");
