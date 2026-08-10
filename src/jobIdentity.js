@@ -94,7 +94,11 @@ const TITLE_EXPANSIONS = {
   avp: "associate vice president",
   pm: "product manager", pms: "product manager",
   gpm: "group product manager", tpm: "technical product manager",
-  dir: "director", mgr: "manager", mgmt: "management",
+  dir: "director", mgr: "manager", mgmt: "manager",
+  // "management" folds into "manager" so the word-order case this module was
+  // written for actually collapses: "Director, Product Management —
+  // Observability" and "Observability Product Director" are one role.
+  management: "manager",
   prod: "product", eng: "engineering", ops: "operations",
   "sr.": "senior",
 };
@@ -156,10 +160,47 @@ export function normalizeTitle(title) {
  * enough to identify it (aggregator rows sometimes arrive with no company —
  * those fall back to URL-only dedup rather than merging on title alone).
  */
+/**
+ * Tokens that describe LEVEL and FUNCTION but not WHICH product.
+ * A title made only of these names a rank, not a role.
+ */
+const CORE_TITLE_TOKENS = new Set([
+  "senior", "sr", "staff", "principal", "lead", "group", "director",
+  "vp", "vice", "president", "head", "chief", "manager", "management",
+  "product", "products", "technical", "tech", "owner", "ii", "iii",
+]);
+
+/**
+ * True when a title carries no scope of its own — "Staff Product Manager",
+ * "Principal Product Manager", "Director, Product Management".
+ *
+ * These are not identities. Stripe posts many distinct roles as plain
+ * "Staff Product Manager"; WeWorkRemotely's RSS renders every one of them as
+ * "Stripe: Staff Product Manager" no matter which team it is for; Microsoft
+ * had thirty separate "Principal Product Manager" postings. Treating
+ * company+title as identity collapsed all of them into one role — 343 rows
+ * proposed for deletion in the first cleanup run, most of them distinct jobs.
+ */
+export function isGenericTitle(title) {
+  const norm = normalizeTitle(title);
+  if (!norm) return true;
+  return norm.split(" ").every(t => CORE_TITLE_TOKENS.has(t));
+}
+
+/**
+ * Source-independent identity for a role, or null when the row does not
+ * carry enough to identify one.
+ *
+ * Returns null for generic titles ON PURPOSE. Null means "URL matching only"
+ * — the caller keeps both rows rather than guessing. Over-merging deletes a
+ * real job and is silent; under-merging leaves a visible duplicate. Those
+ * costs are not symmetric.
+ */
 export function jobIdentityKey(job) {
   const company = normalizeCompany(job?.company);
   const title   = normalizeTitle(job?.title);
   if (!company || !title) return null;
+  if (isGenericTitle(job?.title)) return null;
   return `${company}::${title}`;
 }
 

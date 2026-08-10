@@ -157,8 +157,18 @@ async function main() {
     const kept      = losers.filter(r => ENGAGED.has(r.status));
 
     console.log(`  "${survivor.title}" — ${survivor.company}`);
-    console.log(`    keep   ${survivor.source || 'unknown'} · ${survivor.status} · ${survivor.url}`);
-    for (const r of removable) console.log(`    remove ${r.source || 'unknown'} · ${r.status} · ${r.url}`);
+    // Print each row's OWN title. The group header shows only the survivor's,
+    // which hid the first run's real problem: rows with visibly different
+    // titles sitting in one group, readable only by squinting at URL slugs.
+    const line = (verb, r) =>
+      `    ${verb} ${r.source || 'unknown'} · ${r.status} · ${r.title || '(no title)'}\n           ${r.url}`;
+    console.log(line('keep  ', survivor));
+    for (const r of removable) console.log(line('remove', r));
+
+    const distinctTitles = new Set(group.map(r => (r.title || '').trim().toLowerCase())).size;
+    if (distinctTitles > 1) {
+      console.log(`    ⚠  ${distinctTitles} distinct titles in this group — check before applying`);
+    }
     for (const r of kept)      console.log(`    KEPT   ${r.source || 'unknown'} · ${r.status} · in-process, left alone`);
 
     const updates = rescueFields(survivor, losers);
