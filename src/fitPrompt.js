@@ -51,7 +51,7 @@ Schema:
   "domain": { "primary": "non_interchangeable" | "adjacent" | "novel",
               "secondary": same enum or null,
               "why": "one sentence" },
-  "title_band": "target" | "director" | "vp_scoped" | "org_owner" | "below" | "non_pm",
+  "title_band": "target" | "staff" | "director" | "vp_scoped" | "org_owner" | "senior_pm" | "below" | "non_pm",
   "title_band_why": "one sentence",
   "non_interchangeable_matches": [ { "proof": "<proof key>", "strength": "direct" | "partial", "why": "one sentence" } ],
   "stated_tc": number | null,
@@ -82,7 +82,9 @@ product delivered ON GPU infrastructure is primary=non_interchangeable, secondar
 and the blend is what surfaces the real risk. Do not force a single class to be tidy.
 
 ── TITLE BAND ──
-"target"     — Senior Director, Group PM, Staff PM, Principal PM. The band he wants.
+"target"     — Senior Director, Group PM, Principal PM. The band he wants.
+"staff"      — Staff PM. One rung below target on the individual-contributor ladder — still
+               senior, still worth showing him, priced with its own (small) discount.
 "director"   — Director. Adjacent to target.
 "vp_scoped"  — VP of Product at a LARGE company where the role is scoped, not "own everything".
 "org_owner"  — CPO, Head of Product, or VP of Product where he would BE the ENTIRE product
@@ -90,20 +92,32 @@ and the blend is what surfaces the real risk. Do not force a single class to be 
                deliberately avoiding this. Classify honestly even when the posting is
                attractive. If the JD names peer product lines, or the role reports into a
                larger product organisation, it is NOT org_owner.
-"below"      — Senior PM or below: an individual contributor with no people management and
-               no group-level ownership.
+"senior_pm"  — Senior Product Manager ("Senior PM", "Sr. PM", "Sr Product Manager"). A further
+               rung below Staff on the individual-contributor ladder — still worth showing
+               him, priced with a larger discount than "staff".
+"below"      — More junior than Senior PM: a bare "Product Manager", "Associate Product
+               Manager", or "PM I/II" with no seniority modifier at all.
 "non_pm"     — an engineering role wearing product language (VP Engineering, CTO, Principal Engineer).
 
-Classify by the SCOPE OF THE PRODUCT ORG, not by whether the role manages people.
-Managing PMs does not by itself make a role org_owner — a first-line manager who owns ONE
-product group inside a larger product org is squarely "target". So is a player-coach who
-owns strategy directly while hiring the team that will own it later.
+For "target", "director", "vp_scoped" and "org_owner", classify by the SCOPE OF THE PRODUCT
+ORG, not by whether the role manages people. Managing PMs does not by itself make a role
+org_owner — a first-line manager who owns ONE product group inside a larger product org is
+squarely "target". So is a player-coach who owns strategy directly while hiring the team
+that will own it later.
 
 A leading "Manager," or "Manager of" in a title denotes a people-management line, not a
 diminished scope: "Manager, Group Product Manager — Platform" is a Group PM role and
 belongs in "target". Read the whole posting before deciding: a role that hires three PMs
 for named sub-areas of a platform, alongside other product groups at the same company, is
 target — not org_owner and not below.
+
+"staff", "senior_pm" and "below" are different: read them LITERALLY off the seniority word
+in the title — "Staff", "Senior"/"Sr", or neither — not off scope. These are
+individual-contributor rungs. Do not promote a Senior PM to "staff" or "target" because the
+JD describes broad ownership, and do not demote a Staff PM to "below" because it manages no
+one — the discount for each band is already priced in downstream. If a title genuinely
+reads as both a management line AND a bare IC ladder rung (rare), prefer the management
+reading and use "target"/"director" instead.
 
 ── NON-INTERCHANGEABILITY PROOF KEYS ──
 Emit a match ONLY when the JD describes a specific problem he has already solved. Generic

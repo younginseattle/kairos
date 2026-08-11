@@ -77,11 +77,11 @@ const CASES = {
   coreweave: {
     label: "CoreWeave — Staff PM, Insights",
     outcome: "Reached finals, LOST ON EXPERIENCE-LEVEL MISMATCH, $320K + $100K variable",
-    targetLo: 50, targetHi: 66,
+    targetLo: 48, targetHi: 64,
     signals: {
       company: "CoreWeave",
       domain: { primary: "non_interchangeable", secondary: "novel" }, // observability ON GPU infra
-      titleBand: "target",                             // Staff PM — IN the band by title
+      titleBand: "staff",                              // Staff PM — its own band, small discount
       nonInterchangeableMatches: [
         { proof: "telemetry_econ", strength: "direct" },
         { proof: "agent_fleet", strength: "partial" },
@@ -179,13 +179,49 @@ const cpoRole = computeFit({ ...strongRole, company: "Datadog", titleBand: "org_
 check("an org-owner role IS auto-passed (outside target level band)",
   shouldAutoPass(cpoRole).pass, shouldAutoPass(cpoRole).reason);
 
-const seniorPmRole = computeFit({ ...strongRole, company: "Datadog", titleBand: "below" });
-check("a Senior-PM-and-below role IS auto-passed",
-  shouldAutoPass(seniorPmRole).pass, shouldAutoPass(seniorPmRole).reason);
+const belowRole = computeFit({ ...strongRole, company: "Datadog", titleBand: "below" });
+check("a below-Senior-PM role (bare PM / APM) IS auto-passed",
+  shouldAutoPass(belowRole).pass, shouldAutoPass(belowRole).reason);
 
 const relocationRole = computeFit({ ...strongRole, company: "Datadog", locationPosture: "office_relocation" });
 check("a relocation-required role IS auto-passed",
   shouldAutoPass(relocationRole).pass, shouldAutoPass(relocationRole).reason);
+
+// Staff and Senior PM are accepted bands now, priced by their own discount —
+// neither is a structural disqualifier, so neither hides the job.
+const staffRole = computeFit({ ...strongRole, company: "Datadog", titleBand: "staff" });
+check("a Staff PM role is NOT auto-passed",
+  !shouldAutoPass(staffRole).pass, shouldAutoPass(staffRole).reason);
+
+const seniorPmRole = computeFit({ ...strongRole, company: "Datadog", titleBand: "senior_pm" });
+check("a Senior PM role is NOT auto-passed",
+  !shouldAutoPass(seniorPmRole).pass, shouldAutoPass(seniorPmRole).reason);
+
+// The whole point of the request: accepted but discounted, and the discount
+// gets bigger as the title drops a rung — target > staff > senior_pm — while
+// none of the three ever trips the outside-target-level-band gate. Comp is
+// stated here so the "unverified" gate (ceiling 84) doesn't mask the level
+// dimension's effect on score by compressing all three toward the same cap.
+const levelCompareRole = { ...strongRole, company: "Datadog", statedTc: 400 };
+const targetScore    = computeFit({ ...levelCompareRole, titleBand: "target" }).score;
+const staffScore     = computeFit({ ...levelCompareRole, titleBand: "staff" }).score;
+const seniorPmScore  = computeFit({ ...levelCompareRole, titleBand: "senior_pm" }).score;
+check("staff scores below target — a small discount",
+  staffScore < targetScore, `target ${targetScore} vs staff ${staffScore}`);
+check("senior_pm scores below staff — the larger of the two discounts",
+  seniorPmScore < staffScore, `staff ${staffScore} vs senior_pm ${seniorPmScore}`);
+check("senior_pm still clears the below/org_owner gate ceiling (45)",
+  seniorPmScore > 45, `senior_pm ${seniorPmScore}`);
+check("neither staff nor senior_pm trips the outside-target-level-band gate",
+  !staffRole.gates.some(g => g.reason === "outside target level band") &&
+  !seniorPmRole.gates.some(g => g.reason === "outside target level band"));
+
+// Relocation is stated as non-negotiable and must be the harshest gate in the
+// model — stricter than a title-band miss, even though both auto-pass.
+check("relocation gate ceiling is stricter than the title-band-mismatch gate",
+  relocationRole.gates.find(g => g.reason === "relocation required").ceiling <
+  cpoRole.gates.find(g => g.reason === "outside target level band").ceiling,
+  `relocation ${relocationRole.gates.find(g => g.reason === "relocation required").ceiling} vs title-band ${cpoRole.gates.find(g => g.reason === "outside target level band").ceiling}`);
 
 // A comp gate is a calibration artefact, not a structural fact — must not hide.
 const compGated = computeFit({ ...strongRole, company: "Nobody Curated Inc", statedBase: 120 });

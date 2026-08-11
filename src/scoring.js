@@ -94,23 +94,34 @@ export function scoreDomain({ primary, secondary = null }) {
 // DIMENSION 2 — LEVEL FIT
 //
 // Title band alone is insufficient and gets the calibration set wrong.
-// CoreWeave's "Staff PM" is INSIDE the target band, so a title-only model
+// CoreWeave's "Staff PM" reads one rung below target, so a title-only model
 // assigns no level stretch, the compounding penalty never fires, and the role
-// scores ~70 instead of ~56. Level fit must combine the title band with
+// scores ~70 instead of ~54. Level fit must combine the title band with
 // whether this company reads a VP background as an asset or a mismatch.
+//
+// Staff and Senior PM are accepted bands, not gated ones — he will look at
+// both — but they are a real rung below the Director/Group-PM/Principal band
+// he is actually targeting, so each carries its own, larger, discount.
 // ─────────────────────────────────────────────────────────────────
 
 const LEVEL_MATRIX = {
-  // target band = Senior Director, Group PM, Staff PM, Principal PM
+  // target band = Senior Director, Group PM, Principal PM. The band he wants.
   target: { asset: 95, neutral: 78, mismatch: 58 },
+  // Staff PM — one rung below target on the IC ladder. Small discount.
+  staff: { asset: 88, neutral: 73, mismatch: 53 },
   // Director — adjacent to target, fine at an established company
   director: { asset: 88, neutral: 74, mismatch: 56 },
   // VP of Product at a large company where the role is scoped, not "own everything"
   vp_scoped: { asset: 72, neutral: 60, mismatch: 45 },
   // CPO / VP-of-everything — owning an entire product org again. Deliberately avoided.
   org_owner: { asset: 30, neutral: 22, mismatch: 18 },
-  // Senior PM and below
-  below: { asset: 38, neutral: 33, mismatch: 28 },
+  // Senior PM — a further rung below Staff on the IC ladder. Larger discount
+  // than Staff, but still an accepted band: not gated as "outside target
+  // level band" the way below/org_owner/non_pm are.
+  senior_pm: { asset: 75, neutral: 60, mismatch: 42 },
+  // Below Senior PM — a bare "Product Manager", Associate PM, or PM I/II with
+  // no seniority modifier at all.
+  below: { asset: 22, neutral: 18, mismatch: 14 },
   // Engineering role wearing product language
   non_pm: { asset: 15, neutral: 12, mismatch: 10 },
 };
@@ -125,10 +136,10 @@ export function scoreLevel({ titleBand, companyFacts, tier = null }) {
   let vp = companyFacts?.vpBackground || "neutral";
   const effTier = tier || companyFacts?.tier;
 
-  // A small company hiring at target band still means being the whole product
-  // function. That is the scope Matt is deliberately stepping back from,
-  // regardless of what the title says.
-  if (effTier === "small" && (titleBand === "target" || titleBand === "director")) {
+  // A small company hiring at target/staff band still means being the whole
+  // product function. That is the scope Matt is deliberately stepping back
+  // from, regardless of what the title says.
+  if (effTier === "small" && (titleBand === "target" || titleBand === "director" || titleBand === "staff")) {
     vp = "mismatch";
   }
   const score = row[vp];
@@ -424,14 +435,23 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
   // Only when relocation is the ONLY option. This gate is also an auto-pass
   // trigger, so reading "Bellevue or San Francisco" as a relocation role would
   // hide a local job outright.
+  //
+  // Ceiling 25 — heavier than every other gate, including title-level
+  // mismatches (45). Relocation is stated as non-negotiable in the candidate
+  // profile: no amount of domain or comp strength changes it, so it should
+  // read as the harshest structural fact a posting can carry.
   if (bestPosture(locationPosture) === "office_relocation") {
-    gates.push({ reason: "relocation required", ceiling: 50 });
+    gates.push({ reason: "relocation required", ceiling: 25 });
   }
   // Fires only when the package actually DEPENDS on illiquid paper. A cash-heavy
   // package at a PE-owned company is not an illiquid-equity-heavy package.
   if (companyFacts?.equity === "illiquid" && (compResult?.equityShare ?? 0) > 0.30) {
     gates.push({ reason: "package depends on illiquid / PE equity", ceiling: 60 });
   }
+  // Staff and Senior PM are NOT gated here — they are accepted bands, priced
+  // by their own (larger) LEVEL_MATRIX discount instead. Only org_owner,
+  // below (junior IC, no seniority modifier) and non_pm are outside the band
+  // entirely.
   if (titleBand === "org_owner" || titleBand === "below" || titleBand === "non_pm") {
     gates.push({ reason: "outside target level band", ceiling: 45 });
   }
@@ -461,10 +481,12 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
  * — facts about the role that no recalibration of domain, comp or evidence
  * weighting can reverse:
  *
- *   - outside target level band — a Senior PM, CPO, or engineering role. This is
- *     what the job IS, not how well it scores.
+ *   - outside target level band — a role below Senior PM, a CPO/org-owner, or
+ *     an engineering role wearing product language. This is what the job IS,
+ *     not how well it scores. Staff and Senior PM are NOT in this set — they
+ *     are accepted, discounted bands, not structural disqualifiers.
  *   - relocation required — he is not moving. Stated in the profile as
- *     non-negotiable.
+ *     non-negotiable, and the harshest gate in the model (ceiling 25).
  *
  * Everything else stays visible and is handled by ranking. The Saved tab already
  * sorts by score and dims sub-60 rows, which is the non-destructive version of

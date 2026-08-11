@@ -281,6 +281,34 @@ Epirus (others — Anduril, Palantir, etc. — have locked Greenhouse boards)
 - Startup "fast-paced" / "wear many hats" language → work_life_balance_score 50–69
 - On-call required → work_life_balance_score 30–49
 
+### Title bands (`title_band` in `src/fitPrompt.js` / `LEVEL_MATRIX` in `src/scoring.js`)
+
+Staff PM and Senior PM are **accepted, discounted bands** — not gated. Each is its own rung
+on the individual-contributor ladder, read literally off the title's seniority word, priced
+with its own (asset/neutral/mismatch) row in `LEVEL_MATRIX`:
+
+- `target` — Senior Director, Group PM, Principal PM. Full score, the band he wants.
+- `staff` — Staff PM. Small discount (~7 pts off target).
+- `senior_pm` — Senior PM. Larger discount than staff (~15–20 pts off target), but still
+  clears the outside-target-level-band gate (45) — it is never auto-passed on title alone.
+- `below` — narrower than before: only a bare "Product Manager"/Associate PM with no
+  seniority modifier at all. Still gated (ceiling 45, structural auto-pass).
+
+Before 2026-08-11, `target` absorbed Staff PM and `below` absorbed Senior PM. Existing rows
+extracted under the old vocabulary are ambiguous, not necessarily wrong — `src/staleSignals.js`
+flags any stored `target`/`below` row as stale via `SPLIT_TITLE_BANDS`, for `rescore-jobs.mjs
+--stale-signals` to pick up. This is deliberately broad (most of the pipeline used `target`),
+so scope a rescore run with `--status`/`--since`/`--company`/`--limit` rather than running it
+unbounded.
+
+### Relocation
+
+`office_relocation` is the **harshest gate in the model** — ceiling 25, stricter than the
+outside-target-level-band gate (45). Stated as non-negotiable in the candidate profile: he is
+not moving, so no amount of domain or comp strength should be able to buy back the score. Still
+fires `shouldAutoPass` regardless of the exact ceiling value — this only matters for a
+low-confidence row that stays visible instead of auto-hiding.
+
 ---
 
 ## Claude API Usage
