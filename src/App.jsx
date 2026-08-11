@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient'
 import { computeFit, scoreBand } from "./scoring.js";
 import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
 import { runJobIngestion, SOURCES, isRelevantJob } from './ingestion.js'
+import { parseJobRows } from './bulkImport.js'
 import { JobIndex } from './jobIndex.js'
 import { dedupeBatch } from './jobIdentity.js'
 import NetworkView from './NetworkView.jsx'
@@ -1591,19 +1592,31 @@ export default function JobSearchAgent() {
     if (!raw) return;
 
     let parsed = [];
+    let isTable = false;
     try {
       const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/, "").trim();
       parsed = JSON.parse(clean);
       if (!Array.isArray(parsed)) throw new Error("Expected a JSON array");
     } catch {
-      setEmailError("Couldn't parse JSON — paste the full JSON array from your Claude summary.");
-      return;
+      // Not JSON — try a pasted table (spreadsheet copy, CSV, markdown table).
+      // Same parser the bulk-import CLI uses, so both paths accept the same files.
+      parsed = parseJobRows(raw);
+      isTable = parsed.length > 0;
+      if (!isTable) {
+        setEmailError("Couldn't parse that. Paste a JSON array from your Claude summary, or a table with title and url columns (CSV, TSV, or copied straight out of a spreadsheet).");
+        return;
+      }
     }
 
     // Use broadFilter — this is a curated list from Claude, not raw ATS noise.
     // broadFilter accepts any title with a seniority signal + "product":
     // senior, staff, principal, director, lead, head, group, vp, manager.
-    const relevant = parsed.filter(j => j.title && j.url && isRelevantJob(j, { broadFilter: true }));
+    //
+    // A pasted table skips the title filter entirely: it comes from a sheet a
+    // human already ranked, and the filter would silently drop real roles from
+    // it — anything containing "security", and every "Sr." that isn't spelled
+    // "Senior". Scoring still sorts them out.
+    const relevant = parsed.filter(j => j.title && j.url && (isTable || isRelevantJob(j, { broadFilter: true })));
 
     if (relevant.length === 0) {
       setEmailError(`No relevant roles found after filtering (${parsed.length} total parsed). Jobs must include a seniority signal + "product" in the title.`);
