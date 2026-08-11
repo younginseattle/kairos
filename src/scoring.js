@@ -175,6 +175,15 @@ export const PROOF_POINTS = {
 const BASE_NON_INTER = 30;
 const DIRECT_CREDIT  = 22;
 const PARTIAL_CREDIT = 11;
+// A proof point that answers a peripheral mention in the JD — one bullet
+// among many, a value-story aside, a nice-to-have — is not the same evidence
+// as one that answers the role's core, load-bearing ask. Full credit for a
+// peripheral hit let keyword co-occurrence pass as equivalence: the Pulumi
+// "Senior/Principal PM, Open Source" JD cited real proof for "open source"
+// track record while its actual center of gravity — CLI/DevUX craft — went
+// unscored because nothing in the vocabulary could dock it. Peripheral
+// matches still count, just at half weight.
+const PERIPHERAL_DISCOUNT = 0.5;
 
 export function scoreNonInterchangeability(matches = []) {
   let score = BASE_NON_INTER;
@@ -182,11 +191,14 @@ export function scoreNonInterchangeability(matches = []) {
   for (const m of matches) {
     const key = typeof m === "string" ? m : m.proof;
     const strength = typeof m === "string" ? "direct" : (m.strength || "direct");
+    const centrality = typeof m === "string" ? "core" : (m.centrality || "core");
     if (!PROOF_POINTS[key]) continue;
-    score += strength === "direct" ? DIRECT_CREDIT : PARTIAL_CREDIT;
-    cited.push(`${key} (${strength})`);
+    let credit = strength === "direct" ? DIRECT_CREDIT : PARTIAL_CREDIT;
+    if (centrality === "peripheral") credit *= PERIPHERAL_DISCOUNT;
+    score += credit;
+    cited.push(`${key} (${strength}${centrality === "peripheral" ? ", peripheral" : ""})`);
   }
-  score = Math.min(score, 95);
+  score = Math.min(Math.round(score), 95);
   return {
     score,
     note: cited.length
@@ -400,6 +412,16 @@ export const KNOWN_GAPS = {
   microvm:          { label: "MicroVM / Firecracker",                   required: 8, preferred: 3 },
   mlflow:           { label: "Direct MLflow ownership / ML training",   required: 7, preferred: 3 },
   vendor_fluency:   { label: "Deep single-vendor internal fluency",     required: 6, preferred: 2 },
+  // Added after the Pulumi diagnosis: a named, core requirement with no
+  // matching gap key simply had nowhere to be scored — the LLM's free-text
+  // "gaps" field is display-only prose, never read by scoreKnownGaps, so a
+  // requirement outside this vocabulary was silently dropped rather than
+  // penalized. cli_devux is priced highest of the three: on a role whose own
+  // posting names CLI/DevUX craft as its hardest, most central problem, this
+  // is not a peripheral nice-to-have.
+  cli_devux:        { label: "CLI / developer-experience product craft",  required: 10, preferred: 4 },
+  iac_tooling:      { label: "Declarative IaC tooling ownership (Terraform/CloudFormation/Pulumi-style)", required: 7, preferred: 3 },
+  multilang_sdk:    { label: "Multi-language SDK ownership",             required: 5, preferred: 2 },
   // k8s_operators removed — Kubernetes, Helm authorship and operator
   // patterns are working knowledge, not a gap. It is now a proof point
   // (k8s_platform) instead. Rows stored before this change still carry the
@@ -431,6 +453,20 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
   const gates = [];
   if (compResult?.tc != null && !compResult.estimated && compResult.tc < 300) {
     gates.push({ reason: "stated comp below $300K", ceiling: 55 });
+  } else if (compResult?.tc != null && !compResult.estimated
+             && (compResult.effective ?? compResult.tc) < 360) {
+    // A STATED package that clears the sub-$300K floor can still sit well
+    // under his ~$400K TC target — Pulumi's Principal-level base capped at
+    // $227,850 grossed up to an effective ~$326K, comfortably above 300 but
+    // nowhere near the range BMC and Google Cloud actually offered. The comp
+    // DIMENSION already scores this proportionally (15% weight), but 15% is
+    // too small to function as the "hard modifier" a stated below-target
+    // package should be: strong skill-match elsewhere could still buy an
+    // apply-now score for a role that pays materially less than he is
+    // targeting. This gate keeps that combination out of apply-now (85+)
+    // without cratering the score the way the sub-$300K gate does — it is a
+    // real ceiling, not a nudge, but a milder one than genuinely low pay.
+    gates.push({ reason: "stated comp well below $400K target range", ceiling: 72 });
   }
   // Only when relocation is the ONLY option. This gate is also an auto-pass
   // trigger, so reading "Bellevue or San Francisco" as a relocation role would

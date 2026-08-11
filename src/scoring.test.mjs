@@ -9,7 +9,7 @@
  * Run:  node src/scoring.test.mjs
  */
 
-import { computeFit, scoreBand, MODEL_VERSION, shouldAutoPass, MIN_AUTOPASS_CONFIDENCE } from "./scoring.js";
+import { computeFit, scoreBand, MODEL_VERSION, shouldAutoPass, MIN_AUTOPASS_CONFIDENCE, KNOWN_GAPS } from "./scoring.js";
 import { getCompanyFacts, COMPANY_COUNT } from "./companyFacts.js";
 
 let passed = 0, failed = 0;
@@ -229,6 +229,23 @@ check("the sub-$300K comp gate does NOT trigger auto-pass",
   compGated.gates.some(g => g.reason.includes("$300K")) && !shouldAutoPass(compGated).pass,
   `score ${compGated.score}, gates ${JSON.stringify(compGated.gates.map(g => g.reason))}`);
 
+// A stated package that clears $300K but sits well under the ~$400K target
+// hits the new graduated gate, not the flat sub-$300K one — and it too must
+// stay visible, not hide.
+const belowTargetComp = computeFit({ ...strongRole, company: "Pulumi", statedBase: 227.85 });
+check("a stated package well under $400K but over $300K hits the new gate, not the old one",
+  belowTargetComp.gates.some(g => g.reason.includes("$400K target range")) &&
+  !belowTargetComp.gates.some(g => g.reason.includes("$300K")),
+  `gates ${JSON.stringify(belowTargetComp.gates.map(g => g.reason))}`);
+check("the below-target-comp gate does NOT trigger auto-pass either",
+  !shouldAutoPass(belowTargetComp).pass);
+check("the below-target-comp gate (72) is milder than the sub-$300K gate (55)",
+  belowTargetComp.gates.find(g => g.reason.includes("$400K")).ceiling >
+  compGated.gates.find(g => g.reason.includes("$300K")).ceiling);
+check("a package that genuinely reaches ~$400K effective trips neither comp gate",
+  computeFit({ ...strongRole, company: "Pulumi", statedTc: 400 }).gates
+    .every(g => !g.reason.includes("comp") && !g.reason.includes("$300K") && !g.reason.includes("$400K")));
+
 // Never hide on evidence we do not trust.
 const thinJdBelowBand = computeFit({ ...strongRole, company: "Datadog", titleBand: "below", jdChars: 120 });
 check("a thin JD is never auto-passed, even with a structural gate",
@@ -367,6 +384,47 @@ const platformRole = computeFit({ ...CASES.coreweave.signals, company: "Lambda",
 check("metering and identity evidence lifts non-interchangeability above the old cap",
   platformRole.subscores.non_interchangeability > 63,
   `${platformRole.subscores.non_interchangeability}`);
+
+// ── Core vs. peripheral proof credit (Pulumi diagnosis) ──────────
+// A JD can genuinely contain a proof point's subject matter while that
+// subject is NOT the role's central, load-bearing ask — a "Senior/Principal
+// PM, Open Source" JD whose actual center of gravity is CLI/DevUX craft
+// still legitimately mentions open source. A peripheral hit should still
+// count, just not as much as a core one.
+const coreMatch = computeFit({ ...CASES.elastic.signals,
+  nonInterchangeableMatches: [{ proof: "open_source", strength: "direct", centrality: "core" }] });
+const peripheralMatch = computeFit({ ...CASES.elastic.signals,
+  nonInterchangeableMatches: [{ proof: "open_source", strength: "direct", centrality: "peripheral" }] });
+check("a peripheral direct match scores below a core direct match",
+  peripheralMatch.subscores.non_interchangeability < coreMatch.subscores.non_interchangeability,
+  `core ${coreMatch.subscores.non_interchangeability} vs peripheral ${peripheralMatch.subscores.non_interchangeability}`);
+const noMatch = computeFit({ ...CASES.elastic.signals, nonInterchangeableMatches: [] });
+check("a peripheral match still counts for something — not zeroed out",
+  peripheralMatch.subscores.non_interchangeability > noMatch.subscores.non_interchangeability,
+  `peripheral ${peripheralMatch.subscores.non_interchangeability} vs none ${noMatch.subscores.non_interchangeability}`);
+check("omitting centrality defaults to core (no silent downgrade of existing extractions)",
+  computeFit({ ...CASES.elastic.signals,
+    nonInterchangeableMatches: [{ proof: "open_source", strength: "direct" }] }).subscores.non_interchangeability
+  === coreMatch.subscores.non_interchangeability);
+
+// ── Named requirements outside the old vocabulary now dock points ─
+// cli_devux / iac_tooling / multilang_sdk exist because a requirement the
+// JD explicitly names had nowhere to be scored — the free-text "gaps" field
+// is display prose, never read by scoreKnownGaps, so it was silently
+// dropped rather than penalized.
+const noNewGaps = computeFit({ ...CASES.elastic.signals, knownGaps: [] });
+const withNewGaps = computeFit({ ...CASES.elastic.signals, knownGaps: [
+  { gap: "cli_devux", level: "required" },
+  { gap: "iac_tooling", level: "required" },
+  { gap: "multilang_sdk", level: "required" },
+] });
+check("cli_devux / iac_tooling / multilang_sdk are real, scored deductions",
+  withNewGaps.math.gap_penalty > noNewGaps.math.gap_penalty,
+  `${withNewGaps.math.gap_penalty} vs ${noNewGaps.math.gap_penalty}`);
+check("cli_devux is priced as the largest of the three — the Pulumi JD's own named #1 problem",
+  KNOWN_GAPS.cli_devux.required > KNOWN_GAPS.iac_tooling.required &&
+  KNOWN_GAPS.iac_tooling.required > KNOWN_GAPS.multilang_sdk.required,
+  `cli_devux ${KNOWN_GAPS.cli_devux.required}, iac_tooling ${KNOWN_GAPS.iac_tooling.required}, multilang_sdk ${KNOWN_GAPS.multilang_sdk.required}`);
 
 // Unknown is not neutral.
 const elasticUnknownCo = computeFit({ ...CASES.elastic.signals, company: "Some Company Nobody Curated" });
