@@ -147,6 +147,53 @@ Both have workflow_dispatch workflows (`Recompute Fit Scores`, `Rescore Jobs`).
 **Both default to the repo's default branch** — pick the working branch in the
 Run workflow dropdown, or the run replays the old model and nothing moves.
 
+### `src/bulkImport.js`
+Bulk import of a curated list of jobs (a spreadsheet export, a scan result, a pasted table).
+
+Reuses the back half of `ingestion.js` — `normalizeJob`, `insertJob`, `runClaudeEvaluation`,
+`shouldAutoPass` — plus `jobIndex.js` for dedup, so imported rows dedup and score exactly
+like ATS and LinkedIn jobs. Only the front half differs: rows come from a file instead of
+an ATS API.
+
+Key exports:
+- `parseJobRows(text)` — CSV, TSV, markdown table, or JSON array → row objects. Needs a
+  header row naming a title column and a url column; unrecognized columns are kept and
+  folded into the fallback description.
+- `fetchJobDescription(url)` — best-effort JD retrieval (Greenhouse and Ashby board APIs,
+  generic HTML strip otherwise). Returns `""` on failure. Ashby is tried for any URL
+  carrying a UUID, not just `ashbyhq.com` ones — Confluent serves an Ashby board from
+  `careers.confluent.io` and 429s every scrape of it, while the API answers fine.
+- `isStubDescription(text)` — true when a row holds a metadata stub rather than a real posting.
+- `runBulkImport(supabase, anthropicKey, rows, opts)` — dedup → insert → score → auto-pass.
+
+Dedup goes through `loadJobIndex` / `index.find`, not `isDuplicateJob`. A curated list is
+the case URL-only matching fails hardest: rows are collected by hand from LinkedIn, an
+aggregator or a search result, so the same role arrives under a link sharing nothing with
+the ATS URL already in the table. A hand-curated row also outranks an aggregator one, so a
+duplicate repoints the existing row at the better link rather than being silently dropped.
+
+The ATS title filter is **off** by default here: curated rows are already vetted, and the
+filter drops anything containing "security" and every "Sr." that isn't spelled "Senior".
+Pass `applyTitleFilter: true` (CLI `--filter`) for an untrusted list.
+
+### `src/run-bulk-import.mjs`
+Node CLI for the above. Run as:
+```bash
+node --env-file=.env src/run-bulk-import.mjs src/data/pm-job-scan-2026-08-04.csv
+```
+Flags: `--dry-run` `--no-fetch` `--no-score` `--filter` `--refetch` `--source=NAME`
+
+`--refetch` backfills rows already in the pipeline that are still carrying a stub: it
+fetches the posting, writes it to the existing row, and rescores. Rows with a real
+description are never overwritten — a hand-pasted JD outranks anything a scraper returns.
+Use it after a board that was down or throttling starts answering.
+
+The same parser backs the Discover tab's import box, so a table can be pasted straight into
+the app. Note the split with `scripts/import-jobs-csv.mjs`: that one is a standalone CLI
+for a file on disk, this one is the shared module the browser also loads.
+
+Tests: `node src/bulkImport.test.mjs` (offline — HTTP is stubbed on localhost).
+
 ### `src/run-briefing.mjs`
 Node.js script. Queries Supabase for last 24h jobs. Writes markdown briefing to `~/Desktop`. Run as:
 ```bash

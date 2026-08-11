@@ -40,6 +40,7 @@ const COMPANY_ALIASES = {
   montecarlodata:       "montecarlo",
   snowflakecomputing:   "snowflake",
   honeycombio:          "honeycomb",
+  lambdalabs:           "lambda",
   elasticco:            "elastic",
   elasticsearch:        "elastic",
   newrelicinc:          "newrelic",

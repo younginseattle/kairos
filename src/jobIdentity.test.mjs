@@ -42,6 +42,9 @@ same("alias — Temporal",                       normalizeCompany("temporaltechn
 same("alias — Glean",                          normalizeCompany("gleanwork"),            normalizeCompany("Glean"));
 same("alias — Chronosphere",                   normalizeCompany("chronospherejobs"),     normalizeCompany("Chronosphere"));
 same("alias — Monte Carlo",                    normalizeCompany("montecarlodata"),       normalizeCompany("Monte Carlo"));
+// The Ashby board is "lambdalabs"; the postings themselves say "Lambda", so
+// the ATS row and a hand-collected row would not have matched without this.
+same("alias — Lambda",                         normalizeCompany("lambdalabs"),           normalizeCompany("Lambda"));
 same("punctuation — Fiddler AI",               normalizeCompany("fiddler-ai"),           normalizeCompany("Fiddler AI"));
 same("dot domain — Honeycomb",                 normalizeCompany("honeycomb.io"),         normalizeCompany("Honeycomb"));
 same("case and spacing — Sumo Logic",          normalizeCompany("sumologic"),            normalizeCompany("Sumo Logic"));
