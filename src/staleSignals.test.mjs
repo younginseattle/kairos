@@ -94,6 +94,27 @@ check("a billing JD that ALREADY cites usage_metering is not stale",
     ...current.fit_detail.extraction,
     non_interchangeable_matches: [{ proof: "usage_metering", strength: "direct" }] } } }) === null);
 
+console.log("\nJD topics with no citable GAP key at extraction time (Pulumi diagnosis)");
+const cliJd = { ...current,
+  description: "Every keystroke matters. Own our CLI's error messages and progressive disclosure." };
+check("a CLI/DevUX JD with no cli_devux gap is stale",
+  /cli_devux/.test(staleReason(cliJd) || ""), staleReason(cliJd) || "not stale");
+
+const iacJd = { ...current,
+  description: "Deep experience with Terraform and declarative infrastructure-as-code required." };
+check("an IaC JD with no iac_tooling gap is stale",
+  /iac_tooling/.test(staleReason(iacJd) || ""), staleReason(iacJd) || "not stale");
+
+const sdkJd = { ...current,
+  description: "Own SDKs across multiple languages for our developer platform." };
+check("a multi-language SDK JD with no multilang_sdk gap is stale",
+  /multilang_sdk/.test(staleReason(sdkJd) || ""), staleReason(sdkJd) || "not stale");
+
+check("a CLI JD that ALREADY cites cli_devux is not stale",
+  staleReason({ ...cliJd, fit_detail: { extraction: {
+    ...current.fit_detail.extraction,
+    known_gaps: [{ gap: "cli_devux", level: "required" }] } } }) === null);
+
 console.log("\nNo false positives on unrelated wording");
 check("a plain observability JD does not trip the new topics",
   staleReason(current) === null);

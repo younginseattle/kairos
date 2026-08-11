@@ -53,7 +53,8 @@ Schema:
               "why": "one sentence" },
   "title_band": "target" | "staff" | "director" | "vp_scoped" | "org_owner" | "senior_pm" | "below" | "non_pm",
   "title_band_why": "one sentence",
-  "non_interchangeable_matches": [ { "proof": "<proof key>", "strength": "direct" | "partial", "why": "one sentence" } ],
+  "non_interchangeable_matches": [ { "proof": "<proof key>", "strength": "direct" | "partial",
+                                      "centrality": "core" | "peripheral", "why": "one sentence" } ],
   "stated_tc": number | null,
   "stated_base": number | null,
   "stated_variable": number | null,
@@ -135,6 +136,24 @@ senior-product-leader vocabulary is NOT a match — leave the array empty in tha
                         cloud-native packaging and telemetry at 200K+ containers per cluster
 "direct" = the JD names this problem. "partial" = clearly adjacent but not the same problem.
 
+"agent_fleet" is agent-based, imperative configuration management at scale (Puppet: agents
+continuously enforce state on 10M+ managed endpoints). Declarative Infrastructure-as-Code —
+Terraform, CloudFormation, Pulumi-style provisioning tools, where the product IS the IaC
+tool itself — is an ADJACENT category, not the same one, even though both sit under
+"infrastructure automation." A role centered on owning an IaC tool or its ecosystem is
+"partial" at best against agent_fleet, never "direct", and probably also carries the
+"iac_tooling" gap below — being adjacent does not mean the JD's actual ask was met.
+
+Set "centrality": "core" only when the matched problem is the posting's central, load-
+bearing ask — usually named first, described in detail, or explicitly called out as the
+hard or differentiating part of the role. Set "peripheral" when the JD mentions it as one
+bullet among several, a values/culture aside, or a supporting capability the role doesn't
+actually hinge on. When unsure, use "peripheral" — do not let a single keyword mention
+inflate into full credit for the role's core ask. A JD whose own text names a DIFFERENT
+capability as the hardest, most central problem (e.g. "every keystroke matters" CLI craft)
+should not have a same-sentence "open source" mention scored as core just because a proof
+key exists for it.
+
 ── KNOWN GAP KEYS ──
 Emit only when the JD actually asks for it. "required" if listed as a requirement,
 "preferred" if a nice-to-have.
@@ -142,6 +161,17 @@ Emit only when the JD actually asks for it. "required" if listed as a requiremen
   "microvm"        — MicroVM / Firecracker
   "mlflow"         — direct MLflow ownership / ML training platforms
   "vendor_fluency" — deep single-vendor internal product knowledge an internal hire would have
+  "cli_devux"      — CLI or developer-experience product craft named as a core, hard-to-do-well
+                     requirement (error messages, progressive disclosure, "every keystroke
+                     matters"), not merely "developer-facing product" in general
+  "iac_tooling"    — declarative Infrastructure-as-Code tooling ownership (Terraform,
+                     CloudFormation, Pulumi-style) named as a requirement
+  "multilang_sdk"  — ownership of SDKs shipped across multiple programming languages
+
+Do not silently drop a requirement the JD names just because no proof key fits it as a
+MATCH. If it doesn't map to a known gap key either, still note it in "gaps" (free text) —
+but check first whether "cli_devux", "iac_tooling" or "multilang_sdk" above covers it, since
+those exist precisely because generic senior-PM proof points could not reach it.
 
 Kubernetes, Helm and operators are NOT a gap — see PLATFORM ENGINEERING FLUENCY in the
 candidate profile. A Kubernetes requirement is met; emit "k8s_platform" as a proof point

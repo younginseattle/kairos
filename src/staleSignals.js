@@ -29,6 +29,20 @@ export const NEW_PROOF_TOPICS = {
   k8s_platform:      /\b(kubernetes|k8s\b|helm\b|operator pattern)\b/i,
 };
 
+/**
+ * JD topics that map to GAP keys added after the Pulumi diagnosis (a named,
+ * core requirement — CLI/DevUX craft — had no key to attach to, so it was
+ * silently dropped instead of penalized). A JD hit here with no corresponding
+ * gap cited means the extraction ran against a vocabulary that had no way to
+ * express it, same reasoning as NEW_PROOF_TOPICS but for deductions instead
+ * of credit.
+ */
+export const NEW_GAP_TOPICS = {
+  cli_devux:     /\b(cli\b|command[- ]line interface|every keystroke|progressive disclosure|developer experience|\bdevex\b|\bdx\b)\b/i,
+  iac_tooling:   /\b(terraform|cloudformation|pulumi|infrastructure[- ]as[- ]code|\biac\b|declarative provisioning)\b/i,
+  multilang_sdk: /\b(multi[- ]language sdks?|sdks? (?:in|across|for) (?:multiple|several|many) languages|client librar(?:y|ies))\b/i,
+};
+
 /** Postures a multi-site posting could have been flattened into. */
 export const FLATTENABLE_POSTURES = new Set(["hybrid_remote", "office_relocation"]);
 
@@ -82,6 +96,16 @@ export function staleReason(job) {
     .filter(([key, re]) => PROOF_POINTS[key] && !cited.has(key) && re.test(jd))
     .map(([key]) => key);
   if (uncredited.length) return `JD covers uncredited proof key(s): ${uncredited.join(", ")}`;
+
+  // Same check, mirrored for gaps: a JD covering a topic a new gap key
+  // describes, with no matching entry in known_gaps, could not have cited
+  // it — the key did not exist when this row was extracted.
+  const gapKeys = new Set((x.known_gaps || [])
+    .map(g => (typeof g === "string" ? g : g?.gap)).filter(Boolean));
+  const uncreditedGaps = Object.entries(NEW_GAP_TOPICS)
+    .filter(([key, re]) => KNOWN_GAPS[key] && !gapKeys.has(key) && re.test(jd))
+    .map(([key]) => key);
+  if (uncreditedGaps.length) return `JD covers uncredited gap key(s): ${uncreditedGaps.join(", ")}`;
 
   return null;
 }

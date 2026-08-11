@@ -309,6 +309,37 @@ not moving, so no amount of domain or comp strength should be able to buy back t
 fires `shouldAutoPass` regardless of the exact ceiling value — this only matters for a
 low-confidence row that stays visible instead of auto-hiding.
 
+### Core vs. peripheral evidence, and named requirements outside the vocabulary
+
+Diagnosed against a Pulumi "Senior/Principal PM, Open Source" JD that scored 88: the JD's
+real center of gravity was CLI/DevUX craft (its own named #1 hard-to-do-well problem), but
+the extraction credited a genuine, real "open source" mention as if it were that core ask,
+while three other named requirements (CLI/DevUX craft, IaC tooling ownership, multi-language
+SDKs) had no vocabulary to attach to and were silently dropped rather than penalized — the
+LLM's free-text `gaps` field is display-only prose, never read by `scoreKnownGaps`.
+
+- **`non_interchangeable_matches[].centrality`** — `"core"` (the JD's central, load-bearing
+  ask) or `"peripheral"` (one bullet among several, a values aside, not what the role hinges
+  on). A peripheral match scores at half credit (`PERIPHERAL_DISCOUNT` in `src/scoring.js`)
+  — still counted, not zeroed. Omitted centrality defaults to `"core"`, so existing rows are
+  not silently downgraded by this change.
+- **`KNOWN_GAPS` gained `cli_devux`, `iac_tooling`, `multilang_sdk`** — added specifically
+  because a real, named requirement with no matching key could not be scored at all.
+  `cli_devux` is priced highest of the three (required: 10) since it was the JD's own stated
+  hardest problem, not a secondary ask.
+- **Agent-based config management (Puppet) is NOT declarative IaC** (Terraform/CloudFormation/
+  Pulumi-style). `fitPrompt.js` now says so explicitly next to the `agent_fleet` proof key —
+  it is adjacent, `"partial"` at best, never `"direct"`, and a role centered on IaC tooling
+  ownership likely also carries the `iac_tooling` gap.
+- **A new graduated comp gate** — a STATED package that clears the sub-$300K floor but sits
+  well under his ~$400K TC target (effective < $360K) hits ceiling 72, distinct from and
+  milder than the sub-$300K gate (55). The comp *dimension* already scored this
+  proportionally at 15% weight, which turned out too small to function as the modifier the
+  candidate profile calls for — this is the harder floor.
+- `src/staleSignals.js`'s `NEW_GAP_TOPICS` flags existing rows whose JD text names CLI/DevUX,
+  IaC or multi-language SDK work with no matching `known_gaps` entry, mirroring
+  `NEW_PROOF_TOPICS` — for `rescore-jobs.mjs --stale-signals` to pick up.
+
 ---
 
 ## Claude API Usage
