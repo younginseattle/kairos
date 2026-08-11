@@ -33,6 +33,18 @@ export const NEW_PROOF_TOPICS = {
 export const FLATTENABLE_POSTURES = new Set(["hybrid_remote", "office_relocation"]);
 
 /**
+ * title_band values whose MEANING changed when "staff" and "senior_pm" were
+ * split out as their own bands: "target" used to include Staff PM, and
+ * "below" used to include Senior PM. A row stored under either value could
+ * be the correctly-classified case OR the folded-in one that now belongs to
+ * a different band entirely — that can only be resolved by re-reading the
+ * JD, never by replaying scoring.js over the stored extraction. Deliberately
+ * broad: this covers most of the pipeline, so scope a rescore run with
+ * --status/--since/--company/--limit rather than running it unbounded.
+ */
+export const SPLIT_TITLE_BANDS = new Set(["target", "below"]);
+
+/**
  * @param {object} job — a jobs row with fit_detail and description
  * @returns {string|null} why the row is stale, or null if it is current
  */
@@ -46,6 +58,13 @@ export function staleReason(job) {
     .map(g => (typeof g === "string" ? g : g?.gap))
     .filter(k => k && !KNOWN_GAPS[k]);
   if (retired.length) return `retired gap key: ${retired.join(", ")}`;
+
+  // "target" and "below" absorbed Staff PM and Senior PM respectively before
+  // those became their own bands. A stored value here is ambiguous, not
+  // necessarily wrong.
+  if (SPLIT_TITLE_BANDS.has(x.title_band)) {
+    return `title_band "${x.title_band}" may have absorbed staff/senior_pm before the split`;
+  }
 
   // A single non-local posture may be a multi-site posting flattened to its
   // worst option — the Lambda "Bellevue or San Francisco" case. An array is

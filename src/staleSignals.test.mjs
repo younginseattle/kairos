@@ -57,6 +57,23 @@ check("a bare office_relocation posture likewise",
   /may be a multi-site posting/.test(staleReason({ ...current, fit_detail: { extraction: {
     ...current.fit_detail.extraction, location_posture: "office_relocation" } } })));
 
+console.log("\ntitle_band split — target/below absorbed staff/senior_pm before the split");
+check("a stored \"target\" is stale — may have been Staff PM",
+  /may have absorbed staff\/senior_pm/.test(staleReason({ ...current, fit_detail: { extraction: {
+    ...current.fit_detail.extraction, title_band: "target" } } })));
+check("a stored \"below\" is stale — may have been Senior PM",
+  /may have absorbed staff\/senior_pm/.test(staleReason({ ...current, fit_detail: { extraction: {
+    ...current.fit_detail.extraction, title_band: "below" } } })));
+check("a stored \"staff\" is already current — post-split value",
+  staleReason({ ...current, fit_detail: { extraction: {
+    ...current.fit_detail.extraction, title_band: "staff" } } }) === null);
+check("a stored \"senior_pm\" is already current — post-split value",
+  staleReason({ ...current, fit_detail: { extraction: {
+    ...current.fit_detail.extraction, title_band: "senior_pm" } } }) === null);
+check("a stored \"director\" is untouched by the split",
+  staleReason({ ...current, fit_detail: { extraction: {
+    ...current.fit_detail.extraction, title_band: "director" } } }) === null);
+
 console.log("\nJD topics with no citable proof key at extraction time");
 const billingJd = { ...current,
   description: "Own metering and billing for usage-based GPU compute, from per-minute billing to committed contracts." };

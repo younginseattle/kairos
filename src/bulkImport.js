@@ -4,10 +4,11 @@
  * Paste/CSV/TSV/markdown table → parse → fetch JD → dedup → insert → score
  *
  * This is the *same* back half of the pipeline that ATS ingestion uses —
- * it calls normalizeJob, isDuplicateJob, insertJob, runClaudeEvaluation and
- * shouldAutoPass from ingestion.js rather than reimplementing any of them.
- * The only thing bulk import replaces is the front half: instead of fetching
- * from a Greenhouse/Ashby API, rows come from a file a human curated.
+ * it calls normalizeJob, insertJob, runClaudeEvaluation and shouldAutoPass
+ * from ingestion.js, and dedups through jobIndex.js, rather than
+ * reimplementing any of them. The only thing bulk import replaces is the
+ * front half: instead of fetching from a Greenhouse/Ashby API, rows come
+ * from a file a human curated.
  *
  * Usage (CLI):
  *   node --env-file=.env src/run-bulk-import.mjs src/data/pm-job-scan-2026-08-04.csv
