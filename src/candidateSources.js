@@ -65,6 +65,26 @@ export const KNOWN_UNREACHABLE = [
 ];
 
 /**
+ * Boards that WERE in SOURCES and have been removed. Recorded so a future
+ * session reading the target-company list does not "notice a gap" and add
+ * them back — both removals are deliberate.
+ */
+export const RETIRED_SOURCES = [
+  {
+    company: "dbt Labs", was: "greenhouse/dbtlabsinc",
+    removed: "2026-08-10",
+    reason: "HTTP 404 on the ingestion run of 2026-08-10 — the board token no longer resolves. " +
+            "Public API access was turned off or the board moved. Route is a LinkedIn job alert.",
+  },
+  {
+    company: "Chronosphere", was: "ashby/chronospherejobs",
+    removed: "2026-08-10",
+    reason: "Acquired — no longer an independent target company. The board answered 200 with " +
+            "zero jobs on 2026-08-10, consistent with a wound-down listing.",
+  },
+];
+
+/**
  * Flattens candidates into individual probe targets.
  */
 export function candidateProbes(candidates = CANDIDATE_SOURCES) {
