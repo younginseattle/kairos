@@ -58,6 +58,7 @@ Schema:
   "stated_base": number | null,
   "stated_variable": number | null,
   "comp_note": "what the posting actually said about money, or 'not stated'",
+  "stated_experience_years": { "min": number | null, "max": number | null },
   "location_posture": one of the enum values below, OR an array of them when the
                       posting offers a choice of sites,
   "on_call": boolean,
@@ -164,6 +165,23 @@ If nothing is stated, return null for all three. DO NOT estimate, infer from com
 reputation, or substitute a typical value. A null here is correct and expected; a guess
 corrupts the model.
 
+── STATED EXPERIENCE YEARS ──
+Report ONLY an explicit numeric years-of-experience requirement literally stated in the
+posting's Requirements/Qualifications section — a separate signal from title_band, and
+extracted the same literal way: read the number off the page, do not infer or estimate one
+from the title or seniority language.
+
+  - "2-4 years in Product Management..." → { "min": 2, "max": 4 }
+  - A posting stating different ranges for different internal levels (e.g. "L7: 2-4 years,
+    L8: 4-6 years") → span the full stated range: { "min": 2, "max": 6 }.
+  - "8+ years" (open floor, no stated ceiling) → { "min": 8, "max": null }. Do NOT invent a
+    max for an open-ended range.
+  - "10+ years" with no range at all → { "min": 10, "max": null }, same rule.
+  - No explicit number anywhere in the posting → { "min": null, "max": null }. A title-only
+    seniority word ("Senior Director", "Staff", "Principal", "L8") with NO accompanying
+    number is NOT a stated_experience_years signal — leave both null and let title_band
+    carry that instead. This field is for literal digits only.
+
 ── LOCATION POSTURE ──
 "remote"            — genuinely remote
 "seattle"           — Seattle / Bellevue / Redmond / WA based
@@ -205,6 +223,8 @@ export function extractionToSignals(x, { company, jd }) {
     statedTc: x?.stated_tc ?? null,
     statedBase: x?.stated_base ?? null,
     statedVariable: x?.stated_variable ?? null,
+    statedYearsMin: x?.stated_experience_years?.min ?? null,
+    statedYearsMax: x?.stated_experience_years?.max ?? null,
     locationPosture: x?.location_posture,
     onCall: !!x?.on_call,
     travelHeavy: !!x?.travel_heavy,
