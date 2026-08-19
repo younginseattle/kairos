@@ -1804,6 +1804,15 @@ async function doQuickScore(job) {
     setSelectedJobIds(new Set());
   }
 
+  // Restore only the selected rows — the partial counterpart to "restore all"
+  // on the passed/closed banners, for when just one or two of N auto-passed
+  // jobs were actually worth a second look.
+  async function doBulkRestore() {
+    const ids = [...selectedJobIds];
+    await Promise.all(ids.map(id => handleStatusChange(id, "new")));
+    setSelectedJobIds(new Set());
+  }
+
   async function doDeleteJob(id) {
     await supabase.from('jobs').delete().eq('id', id);
     setSupabaseJobs(prev => prev.filter(j => j.id !== id));
@@ -2624,6 +2633,7 @@ async function doQuickScore(job) {
               { label: "All", status: "all" }, { label: "New", status: "new" },
               { label: "Reviewing", status: "reviewing" }, { label: "Applied", status: "applied" },
               { label: "Interviewing", status: "interviewing" }, { label: "Closed", status: "closed" },
+              { label: "Passed", status: "pass" },
             ].map(({ label, status }) => {
               const active = savedFilter.status === status;
               return <button key={status} onClick={() => setSavedFilter(f => ({ ...f, status }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.accentDim : T.border}`, background: active ? T.greenBg : "transparent", color: active ? T.green : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
@@ -2643,6 +2653,11 @@ async function doQuickScore(job) {
               <Btn small onClick={doRefreshSupabase} disabled={reEvalRunning}>↻</Btn>
               <Btn small onClick={doCheckOpenJobs} disabled={checkRunning} title="Check Greenhouse + Lever jobs for closed listings. LinkedIn requires manual check.">{checkRunning ? "Checking…" : "🔍 Check Closed"}</Btn>
               <Btn small onClick={() => setShowReport(s => !s)} style={showReport ? { borderColor: T.accentDim, background: T.greenBg, color: T.green } : {}}>📋 Report</Btn>
+              {selectedJobIds.size > 0 && (
+                <Btn small onClick={doBulkRestore} style={{ borderColor: T.accentDim, background: T.greenBg, color: T.green }}>
+                  ↩ Restore ({selectedJobIds.size})
+                </Btn>
+              )}
               {selectedJobIds.size > 0 && (
                 <Btn small onClick={doBulkDelete} style={{ borderColor: T.redBorder, background: T.redBg, color: T.red }}>
                   🗑 Delete ({selectedJobIds.size})
@@ -2750,9 +2765,9 @@ async function doQuickScore(job) {
           {supabaseError && <ErrBox msg={supabaseError} />}
           {!supabaseLoading && supabaseJobs.length === 0 && !supabaseError && <div style={{ textAlign: "center", padding: "48px 0", fontFamily: T.fontMono, fontSize: 10, letterSpacing: "0.1em", color: T.textMuted }}>NO ROLES IN PIPELINE YET</div>}
           {dismissedSaved.length > 0 && <button onClick={doRestoreDismissed} style={{ marginBottom: 4, fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>show {dismissedSaved.length} hidden</button>}
-          {supabaseJobs.filter(j => j.status === "pass").length > 0 && (
+          {supabaseJobs.filter(j => j.status === "pass").length > 0 && savedFilter.status !== "pass" && (
             <div style={{ marginBottom: 8, fontFamily: T.fontMono, fontSize: 9, color: T.textMuted }}>
-              {supabaseJobs.filter(j => j.status === "pass").length} passed · <button onClick={() => supabaseJobs.filter(j => j.status === "pass").forEach(j => handleStatusChange(j.id, "new"))} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>restore all</button>
+              {supabaseJobs.filter(j => j.status === "pass").length} passed · <button onClick={() => setSavedFilter(f => ({ ...f, status: "pass" }))} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>view</button> · <button onClick={() => supabaseJobs.filter(j => j.status === "pass").forEach(j => handleStatusChange(j.id, "new"))} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>restore all</button>
             </div>
           )}
           {supabaseJobs.filter(j => j.status === "closed").length > 0 && savedFilter.status !== "closed" && (
@@ -2767,7 +2782,7 @@ async function doQuickScore(job) {
             </div>
           )}
 
-          {[...supabaseJobs].filter(j => !dismissedSaved.includes(j.id) && j.status !== "pass" && (j.status !== "closed" || savedFilter.status === "closed")).filter(j => {
+          {[...supabaseJobs].filter(j => !dismissedSaved.includes(j.id) && (j.status !== "pass" || savedFilter.status === "pass") && (j.status !== "closed" || savedFilter.status === "closed")).filter(j => {
             const ej = enrichJob({ ...j, jd_text: j.description || "" });
             if (savedFilter.status !== "all" && j.status !== savedFilter.status) return false;
             if (savedFilter.pursuit !== "all") {
