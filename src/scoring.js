@@ -424,11 +424,69 @@ export function scoreKnownGaps(gaps = []) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// EXPERIENCE GATE — explicit stated years-of-experience vs Matt's 15+
+//
+// title_band reads the TITLE WORD ("Senior", "Staff", "Director"). A JD can
+// carry no seniority word in the title at all while stating a literal
+// numeric years requirement in its Requirements section — Salesforce's
+// "Product Manager - Agent Fabric" named no seniority word in the title,
+// got read as titleBand "target", and scored 90 even though its own
+// Requirements section stated "2-4 years... L8 candidates 4-6 years", a
+// hard number placing it 9+ years below Matt's 15. Domain and non-inter
+// keyword density (MCP, OTel, multi-cloud and governance were all over that
+// JD) cannot buy back a level the JD states outright in a different field,
+// so this gate reads the number directly. It is independent of titleBand,
+// domain and every keyword-driven dimension, and additive to all of them —
+// it cannot be diluted by a high score elsewhere because gates apply as a
+// ceiling on the final number, not as an input to the weighted mean.
+//
+// Overqualification gates too, not just underqualification — a bounded
+// upper bound ("2-4 years") states an IC-scoped role as plainly as being
+// underqualified would. An OPEN floor ("8+ years") does not: it never gates
+// on the high side, since clearing a stated minimum by a wide margin is not
+// what "8+" was warning about.
+// ─────────────────────────────────────────────────────────────────
+
+export const CANDIDATE_YEARS = 15; // matches "15+ years" in the candidate profile
+
+const EXPERIENCE_GATE_TIERS = [
+  { minGap: 9, ceiling: 38 },
+  { minGap: 6, ceiling: 48 },
+  { minGap: 3, ceiling: 65 },
+];
+
+export function scoreExperienceGate({ statedYearsMin = null, statedYearsMax = null, candidateYears = CANDIDATE_YEARS }) {
+  if (statedYearsMin == null && statedYearsMax == null) return null;
+
+  let gap = 0, direction = null;
+  if (statedYearsMax != null && candidateYears > statedYearsMax) {
+    gap = candidateYears - statedYearsMax;
+    direction = "over";
+  } else if (statedYearsMin != null && candidateYears < statedYearsMin) {
+    gap = statedYearsMin - candidateYears;
+    direction = "under";
+  }
+  if (!direction) return null;
+
+  const tier = EXPERIENCE_GATE_TIERS.find(t => gap >= t.minGap);
+  if (!tier) return null;
+
+  const rangeLabel = statedYearsMax == null ? `${statedYearsMin}+ years`
+    : statedYearsMin == null ? `up to ${statedYearsMax} years`
+    : `${statedYearsMin}-${statedYearsMax} years`;
+  const reason = direction === "over"
+    ? `stated experience requirement (${rangeLabel}) — ${gap} years overqualified`
+    : `stated experience requirement (${rangeLabel}) — ${gap} years under-qualified`;
+  return { reason, ceiling: tier.ceiling };
+}
+
+// ─────────────────────────────────────────────────────────────────
 // GATES — ceilings, not nudges
 // ─────────────────────────────────────────────────────────────────
 
-export function computeGates({ compResult, locationPosture, titleBand, companyFacts, compStated }) {
+export function computeGates({ compResult, locationPosture, titleBand, companyFacts, compStated, experienceGate = null }) {
   const gates = [];
+  if (experienceGate) gates.push(experienceGate);
   if (compResult?.tc != null && !compResult.estimated && compResult.tc < 300) {
     gates.push({ reason: "stated comp below $300K", ceiling: 55 });
   }
@@ -584,6 +642,8 @@ export function computeFit(signals) {
     jdChars = 0,
     compVerifiedTc = null,   // manual override
     burdenOverride = null,   // manual override
+    statedYearsMin = null, statedYearsMax = null,  // explicit numeric YOE requirement, if the JD states one
+    candidateYears = CANDIDATE_YEARS,
   } = signals;
 
   const facts = getCompanyFacts(company);
@@ -620,7 +680,8 @@ export function computeFit(signals) {
   const multiplier = 1 - TWO_STRETCH_K * ds * ls;
   const afterStretch = afterGaps * multiplier;
 
-  const gates = computeGates({ compResult: c, locationPosture, titleBand, companyFacts: facts, compStated });
+  const experienceGate = scoreExperienceGate({ statedYearsMin, statedYearsMax, candidateYears });
+  const gates = computeGates({ compResult: c, locationPosture, titleBand, companyFacts: facts, compStated, experienceGate });
   const ceiling = gates.length ? Math.min(...gates.map(g => g.ceiling)) : 100;
 
   // Gates cap, but must not FLATTEN. A hard `min(raw, ceiling)` collapsed every

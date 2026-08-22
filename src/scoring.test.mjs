@@ -9,7 +9,7 @@
  * Run:  node src/scoring.test.mjs
  */
 
-import { computeFit, scoreBand, MODEL_VERSION, shouldAutoPass, MIN_AUTOPASS_CONFIDENCE } from "./scoring.js";
+import { computeFit, scoreBand, MODEL_VERSION, shouldAutoPass, MIN_AUTOPASS_CONFIDENCE, scoreExperienceGate, CANDIDATE_YEARS } from "./scoring.js";
 import { getCompanyFacts, COMPANY_COUNT } from "./companyFacts.js";
 
 let passed = 0, failed = 0;
@@ -115,6 +115,55 @@ const CASES = {
         // historical record of what was said at the time.
       ],
       jdChars: 2800,
+    },
+  },
+
+  salesforceAgentFabric: {
+    label: "Salesforce — Product Manager, Agent Fabric  [BUG: scored 90 in production]",
+    outcome: "JD Requirements section: '2-4 years in Product Management... L8 candidates "
+      + "will have 4-6 years.' Base comp $148.5K-$313.7K (IC band). Matt has 15+ years — "
+      + "9 years above the stated ceiling. titleBand below simulates the real misread that "
+      + "produced 90: JD is dense with MCP/OTel/agentic keywords, no seniority word in the "
+      + "title itself, so title_band got read as target instead of below. The experience "
+      + "gate must catch this independent of that misread.",
+    targetLo: 25, targetHi: 45,
+    signals: {
+      company: "Salesforce",
+      domain: { primary: "non_interchangeable" },      // MCP, OTel, agent frameworks named explicitly
+      titleBand: "target",                              // the misread — gate must still fire
+      nonInterchangeableMatches: [
+        { proof: "mcp_agentic", strength: "direct" },
+        { proof: "telemetry_econ", strength: "direct" },
+        { proof: "open_source", strength: "partial" },
+      ],
+      statedBase: 231,                                  // midpoint of $148.5K-$313.7K
+      statedYearsMin: 2, statedYearsMax: 6,              // spans L7 (2-4) through L8 (4-6)
+      locationPosture: "remote",
+      knownGaps: [],
+      jdChars: 3000,
+    },
+  },
+
+  salesforceHyperforce: {
+    label: "Salesforce — Senior Director, Hyperforce",
+    outcome: "Correctly senior-level role for comparison — an explicit but OPEN-floor "
+      + "experience requirement ('10+ years') must not gate an overqualified read the way "
+      + "a bounded range does.",
+    targetLo: 85, targetHi: 100,
+    signals: {
+      company: "Salesforce",
+      domain: { primary: "non_interchangeable" },
+      titleBand: "target",                              // Senior Director
+      nonInterchangeableMatches: [
+        { proof: "mcp_agentic", strength: "direct" },
+        { proof: "telemetry_econ", strength: "direct" },
+        { proof: "agent_fleet", strength: "partial" },
+      ],
+      statedTc: 400,
+      statedYearsMin: 10, statedYearsMax: null,          // "10+ years" — open floor, no ceiling
+      locationPosture: "remote",
+      knownGaps: [],
+      jdChars: 3200,
     },
   },
 
@@ -377,6 +426,55 @@ check("unknown company lowers confidence",
 const thinJd = computeFit({ ...CASES.bmc.signals, jdChars: 150 });
 check("thin JD produces visibly low confidence even on a high score",
   thinJd.confidence < 55, `confidence ${thinJd.confidence} on score ${thinJd.score}`);
+
+// ── Experience gate ───────────────────────────────────────────────
+// The bug this file exists to pin: Salesforce "Product Manager - Agent
+// Fabric" scored 90 in production. Its Requirements section stated
+// "2-4 years... L8 candidates 4-6 years" — a literal number the old model
+// never read at all. The gate must catch this REGARDLESS of titleBand,
+// and must not fire on an open-ended "X+ years" floor.
+console.log("\n" + "=".repeat(76));
+console.log("EXPERIENCE GATE");
+
+check("no gate when the JD states no explicit years requirement",
+  scoreExperienceGate({ statedYearsMin: null, statedYearsMax: null }) === null);
+
+check("no gate for an open-ended '10+ years' floor cleared by 15 years",
+  scoreExperienceGate({ statedYearsMin: 10, statedYearsMax: null, candidateYears: 15 }) === null);
+
+check("no gate for a bounded range the candidate sits inside",
+  scoreExperienceGate({ statedYearsMin: 10, statedYearsMax: 18, candidateYears: 15 }) === null);
+
+const overGate = scoreExperienceGate({ statedYearsMin: 2, statedYearsMax: 6, candidateYears: CANDIDATE_YEARS });
+check("overqualification gates on a bounded upper bound (2-4/4-6 yrs vs 15)",
+  overGate && overGate.ceiling <= 38,
+  JSON.stringify(overGate));
+
+const underGate = scoreExperienceGate({ statedYearsMin: 12, statedYearsMax: 18, candidateYears: 4 });
+check("under-qualification gates symmetrically",
+  underGate && underGate.reason.includes("under-qualified"),
+  JSON.stringify(underGate));
+
+check("Salesforce Agent Fabric drops from a 90-scoring extraction into a defensible range",
+  results.salesforceAgentFabric.score >= 25 && results.salesforceAgentFabric.score <= 45,
+  `scored ${results.salesforceAgentFabric.score}`);
+check("...and the experience gate is what does it, not titleBand (which is 'target' here)",
+  results.salesforceAgentFabric.gates.some(g => g.reason.includes("stated experience requirement")),
+  JSON.stringify(results.salesforceAgentFabric.gates));
+check("...and it is NOT hidden via auto-pass (title-band-based structural set is untouched)",
+  !shouldAutoPass(results.salesforceAgentFabric).pass,
+  shouldAutoPass(results.salesforceAgentFabric).reason);
+
+check("Salesforce Hyperforce (correctly senior, open-floor '10+ years') is NOT gated",
+  !results.salesforceHyperforce.gates.some(g => g.reason.includes("stated experience requirement")),
+  JSON.stringify(results.salesforceHyperforce.gates));
+check("...and still reaches apply-now",
+  results.salesforceHyperforce.band.key === "apply_now",
+  `scored ${results.salesforceHyperforce.score}`);
+
+check("BMC Senior Director (no stated years language at all) is unaffected",
+  !results.bmc.gates.some(g => g.reason.includes("stated experience requirement")) &&
+  results.bmc.band.key === "apply_now");
 
 const noComp = computeFit({ ...CASES.bmc.signals, statedTc: null, company: "Unknown Co Ltd" });
 check("comp unknown + company unknown → comp dimension EXCLUDED, not imputed",
