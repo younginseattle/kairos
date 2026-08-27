@@ -66,6 +66,28 @@ export const PLATFORM_SCOPE_PATTERNS = [
   /\bcompute\b|\bkubernetes\b|\bnetworking\b|\bstorage\b/i,
   /\breliability\b|\bsre\b/i,
   /\bintegrations?\b|\becosystem\b/i,
+  // Observability-specific vocabulary. A Senior PM title at a core
+  // observability company (Datadog, Elastic, New Relic, PagerDuty, Grafana
+  // Labs, Sumo Logic, Cribl, Kentik — none of them broadFilter) names the
+  // product surface, not the word "observability" itself: "Senior Product
+  // Manager, APM" or "...Tracing" or "...Incident Response" were all
+  // silently dropped for lacking a scope word, even though these are
+  // exactly the roles this pipeline exists to find.
+  /\bapm\b/i,
+  /\btracing\b/i,
+  /\blog(s|ging)?\b/i,
+  /\bmetrics?\b/i,
+  /\balert(s|ing)?\b/i,
+  /\bincidents?\b/i,
+  /\buptime\b/i,
+  /\bdashboards?\b/i,
+  /\blatency\b/i,
+  // ITOM/AIOps and network/IT operations management — Matt's other named
+  // proof-point domain (Puppet, Domotz). Distinct from the generic
+  // "operations" word EXCLUSION_PATTERNS blocks below, which targets
+  // non-technical ops functions (Sales/Revenue/Business Ops) that happen
+  // to get labeled "product" in some ATS taxonomies.
+  /\bitom\b|\baiops\b|\bit\s+operations\b|\bnetwork\s+operations\b|\bnoc\b/i,
 ];
 
 /**
@@ -87,7 +109,14 @@ export const EXCLUSION_PATTERNS = [
   /\brecruit/i,
   /\bdata\s+scien/i,
   /\bresearch(er)?\b/i,
-  /\boperations\b/i,
+  // A bare /\boperations\b/i used to block EVERY "operations" title,
+  // including "IT Operations Management" and "Network Operations" — Matt's
+  // ITOM/AIOps proof-point domain (see PLATFORM_SCOPE_PATTERNS above), not
+  // the non-technical ops functions this is actually meant to catch.
+  // Narrowed to the specific flavors that get mislabeled "product" in ATS
+  // taxonomies; "marketing operations" is already caught by /\bmarketing\b/i
+  // and "sales operations" by /\bsales\b/i above.
+  /\b(revenue|business|people|hr|customer|deal|partner|vendor|gtm)\s+operations\b/i,
   /\bsecurity\b/i,
   /\bsupport\b/i,
   /\bproduct\s+owner\b/i,

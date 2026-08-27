@@ -31,13 +31,6 @@ const AMAZON_MAX_PAGES   = 5;
 // Grouped by domain relevance to observability/platform/infra PM roles
 // ─────────────────────────────────────────────────────────────────
 
-// Companies where broader title filtering applies — they hire senior PMs
-// at Director/VP level but may title them differently (e.g. "Product Manager L7")
-const BROAD_FILTER_COMPANIES = new Set([
-  "anthropic", "openai", "deepmind", "cohere", "mistral",
-  "github", "linear", "vercel", "harness",
-]);
-
 export const SOURCES = [
   // ── Observability / monitoring ────────────────────────────────
   { id: "datadog",              ats: "greenhouse", tier: 1, domain: "observability"                    },
