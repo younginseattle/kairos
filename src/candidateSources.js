@@ -25,7 +25,67 @@
  * ═══════════════════════════════════════════════════════════════
  */
 
-export const CANDIDATE_SOURCES = [];
+/**
+ * Added 2026-08-25 in response to low ingestion volume. Not yet verified —
+ * every entry needs a `Verify Job Boards` Actions run before promotion into
+ * SOURCES. Chosen from gaps against the candidate profile (observability,
+ * ITOM/AIOps, infrastructure automation, agentic/AI platforms, developer
+ * tooling) that the existing ~65-company SOURCES list did not cover, and
+ * cross-checked against KNOWN_UNREACHABLE / RETIRED_SOURCES below to avoid
+ * re-guessing tokens already proven dead.
+ */
+export const CANDIDATE_SOURCES = [
+  // ── Observability (expands beyond the literal "observability" — see the
+  // titleFilter.js APM/tracing/logs/alerting/incident fix from the same pass) ──
+  { company: "Sysdig", tier: 1, domain: "observability",
+    guesses: [{ ats: "greenhouse", id: "sysdig" }, { ats: "ashby", id: "sysdig" }, { ats: "lever", id: "sysdig" }] },
+  { company: "LogicMonitor", tier: 2, domain: "observability",
+    guesses: [{ ats: "greenhouse", id: "logicmonitor" }, { ats: "workable", id: "logicmonitor" }, { ats: "ashby", id: "logicmonitor" }] },
+  { company: "ExtraHop", tier: 1, domain: "observability", // Seattle HQ — network detection & response, direct local fit
+    guesses: [{ ats: "greenhouse", id: "extrahop" }, { ats: "ashby", id: "extrahop" }, { ats: "lever", id: "extrahop" }] },
+  { company: "incident.io", tier: 2, domain: "observability",
+    guesses: [{ ats: "ashby", id: "incidentio" }, { ats: "greenhouse", id: "incidentio" }, { ats: "lever", id: "incidentio" }] },
+  { company: "Axiom", tier: 2, domain: "observability",
+    guesses: [{ ats: "ashby", id: "axiom" }, { ats: "greenhouse", id: "axiomhq" }, { ats: "lever", id: "axiom" }] },
+
+  // ── AI / agentic platforms (broad filter — same reasoning as Anthropic/
+  // Databricks/Scale AI already in SOURCES: internal PM titles rarely spell
+  // out "platform" or "infrastructure") ──────────────────────────────────
+  { company: "OpenAI", tier: 1, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "openai" }, { ats: "greenhouse", id: "openai" }, { ats: "lever", id: "openai" }] },
+  { company: "Hugging Face", tier: 1, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "huggingface" }, { ats: "ashby", id: "huggingface" }, { ats: "lever", id: "huggingface" }] },
+  { company: "Mistral AI", tier: 1, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "mistralai" }, { ats: "greenhouse", id: "mistralai" }, { ats: "lever", id: "mistral" }] },
+  { company: "Cohere", tier: 1, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "cohere" }, { ats: "ashby", id: "cohere" }, { ats: "lever", id: "cohere" }] },
+  { company: "Perplexity AI", tier: 1, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "perplexityai" }, { ats: "greenhouse", id: "perplexityai" }, { ats: "lever", id: "perplexity" }] },
+
+  // ── Infrastructure / data platform ──────────────────────────────────
+  { company: "HashiCorp", tier: 1, domain: "infrastructure", broadFilter: true, // Terraform/Vault/Consul — infra provisioning, direct fit
+    guesses: [{ ats: "greenhouse", id: "hashicorp" }, { ats: "ashby", id: "hashicorp" }, { ats: "lever", id: "hashicorp" }] },
+  { company: "DigitalOcean", tier: 2, domain: "infrastructure", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "digitalocean" }, { ats: "ashby", id: "digitalocean" }, { ats: "lever", id: "digitalocean" }] },
+  { company: "CockroachDB", tier: 2, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "cockroachlabs" }, { ats: "ashby", id: "cockroachlabs" }, { ats: "lever", id: "cockroachlabs" }] },
+  { company: "PlanetScale", tier: 2, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "ashby", id: "planetscale" }, { ats: "greenhouse", id: "planetscale" }, { ats: "lever", id: "planetscale" }] },
+  { company: "Redis", tier: 2, domain: "platform", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "redis" }, { ats: "ashby", id: "redis" }, { ats: "greenhouse", id: "redislabs" }] },
+
+  // ── Developer tooling ────────────────────────────────────────────────
+  { company: "Kong Inc", tier: 2, domain: "devtools", broadFilter: true, // API gateway/management platform
+    guesses: [{ ats: "greenhouse", id: "konginc" }, { ats: "ashby", id: "kong" }, { ats: "lever", id: "kong" }] },
+  { company: "Docker Inc", tier: 1, domain: "devtools", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "docker" }, { ats: "ashby", id: "docker" }, { ats: "lever", id: "docker" }] },
+  { company: "Netlify", tier: 2, domain: "devtools", broadFilter: true,
+    guesses: [{ ats: "greenhouse", id: "netlify" }, { ats: "ashby", id: "netlify" }, { ats: "lever", id: "netlify" }] },
+  { company: "Buildkite", tier: 2, domain: "devtools", broadFilter: true, // Seattle HQ
+    guesses: [{ ats: "greenhouse", id: "buildkite" }, { ats: "ashby", id: "buildkite" }, { ats: "lever", id: "buildkite" }] },
+  { company: "JFrog", tier: 2, domain: "devtools",
+    guesses: [{ ats: "greenhouse", id: "jfrog" }, { ats: "workable", id: "jfrog" }, { ats: "lever", id: "jfrog" }] },
+];
 
 /**
  * Companies probed and not reachable by API, recorded so future sessions

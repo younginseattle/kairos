@@ -96,6 +96,16 @@ Rules:
 - Senior / Sr titles are in scope **only** with platform-infra-observability-AI-dev scope in the title, or when the source sets `broadFilter`
 - A bare "Product Manager" with no seniority modifier is never in scope
 - `developer` is deliberately not an exclusion keyword — "Director of Product, Developer Platform" is a target role
+- Platform scope includes observability-specific product-surface words (APM, tracing, logs,
+  metrics, alerting, incidents, uptime, dashboards, latency) and ITOM/AIOps/network-operations
+  terms — added 2026-08-25 after auditing why core observability companies (Datadog, Elastic,
+  New Relic, PagerDuty — none of them `broadFilter`) were producing so few matches: their
+  Senior PM titles name the product surface ("Senior PM, APM"), not the literal word
+  "observability", so real matches were being silently dropped.
+- The `EXCLUSION_PATTERNS` "operations" block only catches non-technical ops flavors
+  (Revenue/Business/People/Customer/etc. Operations) — a bare `/\boperations\b/i` used to
+  also block "IT Operations Management" and "Network Operations", which is Matt's other
+  named proof-point domain (ITOM/AIOps), not noise.
 
 Pinned by `src/titleFilter.test.mjs` (`node src/titleFilter.test.mjs`).
 
@@ -104,6 +114,12 @@ Staging area for **unverified** board IDs. `SOURCES` stays a verified list; gues
 go here, get probed by `scripts/verify-boards.mjs`, and only confirmed entries are
 promoted. A wrong board token and a company with public API access disabled both
 return 404, so guessing directly into `SOURCES` silently rots it.
+
+20 candidates added 2026-08-25 — awaiting a `Verify Job Boards` run before promotion:
+Sysdig, LogicMonitor, ExtraHop, incident.io, Axiom (observability); OpenAI, Hugging Face,
+Mistral AI, Cohere, Perplexity AI (AI/agentic platforms); HashiCorp, DigitalOcean,
+CockroachDB, PlanetScale, Redis (infrastructure/data platform); Kong Inc, Docker Inc,
+Netlify, Buildkite, JFrog (developer tooling).
 
 ### `scripts/verify-boards.mjs`
 Probes every candidate board and prints paste-ready `SOURCES` lines for the ones
@@ -254,21 +270,49 @@ The full candidate profile string is defined inside `ingestion.js` as `candidate
 
 ## Target Companies
 
-### Observability / Monitoring (tier 1 priority)
-Datadog, Elastic, New Relic, PagerDuty, Grafana Labs, Honeycomb, Sumo Logic, Cribl, Kentik,
-Arize AI, Fiddler AI, Observe Inc, Galileo AI, Braintrust
+`src/ingestion.js` → `SOURCES` is the source of truth (~65 companies as of 2026-08-25) — this
+section is a categorized index into it, not an independent list. If the two ever disagree,
+`SOURCES` wins; update this section to match rather than the other way around.
 
-### AI / ML Platforms
-Anthropic, Databricks, Glean, Scale AI
+### Observability
+Datadog, Elastic, New Relic, PagerDuty, Grafana Labs, Sumo Logic, Cribl, Kentik (standard
+filter) · Honeycomb, Arize AI, Fiddler AI, Braintrust, Monte Carlo, Sentry, InfluxData,
+Auvik Networks (`broadFilter`)
 
-### Infrastructure / Cloud / DevTools
-Cloudflare, CoreWeave, Temporal, LaunchDarkly, Vercel, Postman, Harness, Fastly, Fivetran, Twilio, MongoDB, Stripe, GitLab, Smartsheet, Samsara
+### Platform (AI/ML, data, SaaS)
+Temporal, LaunchDarkly, Twilio, MongoDB, Stripe, Smartsheet, Fivetran (standard filter) ·
+Anthropic, Databricks, Glean, Scale AI, Pinecone, Confluent, Snowflake, ClickHouse,
+StarTree, Materialize, Airbyte, Prefect, Astronomer, Anyscale, LangChain, Supabase, Neon
+(`broadFilter`)
 
-Removed from `SOURCES` — see `RETIRED_SOURCES` in `src/candidateSources.js` before adding either back:
-**dbt Labs** (board token 404s as of 2026-08-10) and **Chronosphere** (acquired).
+### Infrastructure
+Cloudflare, CoreWeave, Fastly, Samsara (standard filter) · Crusoe, Lambda, Nebius, Modal,
+Together AI, Baseten, Render, Cerebras, Qumulo (`broadFilter`)
+
+### Developer / Software Delivery Tools
+Postman, GitLab (standard filter) · Vercel, Harness, PostHog, Pulumi (Seattle HQ),
+CircleCI, Sourcegraph, Linear (`broadFilter`)
+
+### AWS
+Public `amazon.jobs` search API, filtered to `business_category=amazon-web-services` —
+see the comment on the `amazon` entry in `SOURCES` for why the category filter matters.
+
+### Aggregators
+RemoteOK, We Work Remotely — broaden beyond the hand-curated list above; `company` comes
+from each listing, not the source id.
 
 ### Defense Tech
 Epirus (others — Anduril, Palantir, etc. — have locked Greenhouse boards)
+
+### Removed / unreachable
+`RETIRED_SOURCES` in `src/candidateSources.js`: **dbt Labs** (board token 404s as of
+2026-08-10) and **Chronosphere** (acquired) — check there before adding either back.
+`KNOWN_UNREACHABLE` in the same file lists ~17 companies (Splunk, Dynatrace, Nutanix,
+Weights & Biases, Groq, Retool, and others) whose public API access is disabled despite a
+live careers page — route those through a LinkedIn job alert instead of re-guessing tokens.
+
+### Candidates awaiting verification
+See the `CANDIDATE_SOURCES` note in the `src/candidateSources.js` section above.
 
 ---
 

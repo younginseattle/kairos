@@ -75,6 +75,29 @@ console.log("\n'developer' must NOT be an exclusion — these are target roles")
 want("Director of Product, Developer Platform", true);
 want("VP Product, Developer Tools", true);
 
+console.log("\nObservability-specific product surfaces — scope words beyond the literal 'observability'");
+want("Senior Product Manager, APM", true);
+want("Senior Product Manager, Tracing", true);
+want("Senior Product Manager, Logs", true);
+want("Senior Product Manager, Incident Response", true);
+want("Senior Product Manager, Alerting", true);
+want("Senior Product Manager, Metrics", true);
+want("Senior Product Manager, Dashboards", true);
+want("Senior Product Manager, Uptime", true);
+
+console.log("\nITOM/AIOps and network operations — Matt's other proof-point domain, not the generic-ops exclusion");
+want("Senior Product Manager, IT Operations Management", true);
+want("Senior Product Manager, Network Operations", true);
+want("Senior Product Manager, ITOM", true);
+want("Senior Product Manager, AIOps", true);
+want("Director, Product — IT Operations Management", true);
+
+console.log("\nNon-technical 'operations' flavors — still excluded");
+want("Senior Product Manager, Business Operations", false);
+want("Senior Product Manager, Revenue Operations", false);
+want("Senior Product Manager, People Operations", false);
+want("Senior Product Manager, Customer Operations", false);
+
 console.log("\nlooksLikeSeniorTitle — loose title-line detection for email cards");
 for (const [line, expected] of [
   ["Director of Product Management", true],
