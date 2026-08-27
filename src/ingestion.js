@@ -152,6 +152,23 @@ export const SOURCES = [
   { id: "qumulo",            ats: "ashby",      tier: 2, domain: "infrastructure", broadFilter: true }, // Seattle HQ
   { id: "auviknetworks",     ats: "greenhouse", tier: 2, domain: "observability",  broadFilter: true },
 
+  // ── Verified 2026-08-27 by scripts/verify-boards.mjs (Actions run) ──
+  // 13 of the 20 candidates added 2026-08-25 responded. Promoted here from
+  // src/candidateSources.js; the other 7 are recorded in KNOWN_UNREACHABLE.
+  { id: "docker",            ats: "ashby",      tier: 1, domain: "devtools",       broadFilter: true }, // 2 matching
+  { id: "openai",            ats: "ashby",      tier: 1, domain: "platform",       broadFilter: true }, // 1 matching
+  { id: "sysdig",            ats: "lever",      tier: 1, domain: "observability"                     },
+  { id: "cohere",            ats: "ashby",      tier: 1, domain: "platform",       broadFilter: true },
+  { id: "jfrog",             ats: "greenhouse", tier: 2, domain: "devtools"                           }, // 2 matching
+  { id: "logicmonitor",      ats: "greenhouse", tier: 2, domain: "observability"                      }, // 1 matching
+  { id: "cockroachlabs",     ats: "greenhouse", tier: 2, domain: "platform",       broadFilter: true }, // 1 matching
+  { id: "redis",             ats: "ashby",      tier: 2, domain: "platform",       broadFilter: true }, // 1 matching
+  { id: "kong",              ats: "ashby",      tier: 2, domain: "devtools",       broadFilter: true }, // 1 matching
+  { id: "netlify",           ats: "greenhouse", tier: 2, domain: "devtools",       broadFilter: true }, // 1 matching
+  { id: "axiom",             ats: "ashby",      tier: 2, domain: "observability"                      },
+  { id: "planetscale",       ats: "greenhouse", tier: 2, domain: "platform",       broadFilter: true },
+  { id: "buildkite",         ats: "greenhouse", tier: 2, domain: "devtools",       broadFilter: true },
+
   // ── Amazon / AWS — public search API, not an ATS board ────────────
   // `id` is the search query. business_category confines it to AWS: the
   // unfiltered query returned 482 roles / 105 matching, mostly Amazon

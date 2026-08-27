@@ -115,11 +115,12 @@ go here, get probed by `scripts/verify-boards.mjs`, and only confirmed entries a
 promoted. A wrong board token and a company with public API access disabled both
 return 404, so guessing directly into `SOURCES` silently rots it.
 
-20 candidates added 2026-08-25 — awaiting a `Verify Job Boards` run before promotion:
-Sysdig, LogicMonitor, ExtraHop, incident.io, Axiom (observability); OpenAI, Hugging Face,
-Mistral AI, Cohere, Perplexity AI (AI/agentic platforms); HashiCorp, DigitalOcean,
-CockroachDB, PlanetScale, Redis (infrastructure/data platform); Kong Inc, Docker Inc,
-Netlify, Buildkite, JFrog (developer tooling).
+20 candidates added 2026-08-25, resolved by the 2026-08-27 Verify Job Boards run: 13
+promoted into `SOURCES` (Sysdig, LogicMonitor, Axiom, OpenAI, Cohere, CockroachDB,
+PlanetScale, Redis, Kong, Docker, Netlify, Buildkite, JFrog) and 7 moved to
+`KNOWN_UNREACHABLE` below (ExtraHop, incident.io, Hugging Face, Mistral AI, Perplexity AI,
+HashiCorp, DigitalOcean) — every guessed token 404'd or, for Mistral AI, returned zero jobs
+on one and 404 on the rest.
 
 ### `scripts/verify-boards.mjs`
 Probes every candidate board and prints paste-ready `SOURCES` lines for the ones
@@ -270,28 +271,28 @@ The full candidate profile string is defined inside `ingestion.js` as `candidate
 
 ## Target Companies
 
-`src/ingestion.js` → `SOURCES` is the source of truth (~65 companies as of 2026-08-25) — this
+`src/ingestion.js` → `SOURCES` is the source of truth (~79 companies as of 2026-08-27) — this
 section is a categorized index into it, not an independent list. If the two ever disagree,
 `SOURCES` wins; update this section to match rather than the other way around.
 
 ### Observability
-Datadog, Elastic, New Relic, PagerDuty, Grafana Labs, Sumo Logic, Cribl, Kentik (standard
-filter) · Honeycomb, Arize AI, Fiddler AI, Braintrust, Monte Carlo, Sentry, InfluxData,
-Auvik Networks (`broadFilter`)
+Datadog, Elastic, New Relic, PagerDuty, Grafana Labs, Sumo Logic, Cribl, Kentik, Sysdig,
+LogicMonitor, Axiom (standard filter) · Honeycomb, Arize AI, Fiddler AI, Braintrust, Monte
+Carlo, Sentry, InfluxData, Auvik Networks (`broadFilter`)
 
 ### Platform (AI/ML, data, SaaS)
 Temporal, LaunchDarkly, Twilio, MongoDB, Stripe, Smartsheet, Fivetran (standard filter) ·
 Anthropic, Databricks, Glean, Scale AI, Pinecone, Confluent, Snowflake, ClickHouse,
-StarTree, Materialize, Airbyte, Prefect, Astronomer, Anyscale, LangChain, Supabase, Neon
-(`broadFilter`)
+StarTree, Materialize, Airbyte, Prefect, Astronomer, Anyscale, LangChain, Supabase, Neon,
+OpenAI, Cohere, CockroachDB (as `cockroachlabs`), PlanetScale, Redis (`broadFilter`)
 
 ### Infrastructure
 Cloudflare, CoreWeave, Fastly, Samsara (standard filter) · Crusoe, Lambda, Nebius, Modal,
 Together AI, Baseten, Render, Cerebras, Qumulo (`broadFilter`)
 
 ### Developer / Software Delivery Tools
-Postman, GitLab (standard filter) · Vercel, Harness, PostHog, Pulumi (Seattle HQ),
-CircleCI, Sourcegraph, Linear (`broadFilter`)
+Postman, GitLab, JFrog (standard filter) · Vercel, Harness, PostHog, Pulumi (Seattle HQ),
+CircleCI, Sourcegraph, Linear, Docker, Kong, Netlify, Buildkite (Seattle HQ) (`broadFilter`)
 
 ### AWS
 Public `amazon.jobs` search API, filtered to `business_category=amazon-web-services` —
@@ -307,12 +308,15 @@ Epirus (others — Anduril, Palantir, etc. — have locked Greenhouse boards)
 ### Removed / unreachable
 `RETIRED_SOURCES` in `src/candidateSources.js`: **dbt Labs** (board token 404s as of
 2026-08-10) and **Chronosphere** (acquired) — check there before adding either back.
-`KNOWN_UNREACHABLE` in the same file lists ~17 companies (Splunk, Dynatrace, Nutanix,
-Weights & Biases, Groq, Retool, and others) whose public API access is disabled despite a
-live careers page — route those through a LinkedIn job alert instead of re-guessing tokens.
+`KNOWN_UNREACHABLE` in the same file lists 24 companies (Splunk, Dynatrace, Nutanix,
+Weights & Biases, Groq, Retool, ExtraHop, Hugging Face, HashiCorp, DigitalOcean, and
+others) whose public API access is disabled despite a live careers page — route those
+through a LinkedIn job alert instead of re-guessing tokens.
 
 ### Candidates awaiting verification
-See the `CANDIDATE_SOURCES` note in the `src/candidateSources.js` section above.
+`CANDIDATE_SOURCES` in `src/candidateSources.js` is empty as of 2026-08-27 — the last batch
+of 20 (added in response to low ingestion volume) was fully resolved: 13 promoted into
+`SOURCES` above, 7 moved to `KNOWN_UNREACHABLE`.
 
 ---
 
