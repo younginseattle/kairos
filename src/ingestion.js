@@ -18,7 +18,7 @@ import { computeFit, shouldAutoPass } from "./scoring.js";
 import { FIT_EXTRACTION_PROMPT, buildFitUserMessage, extractionToSignals } from "./fitPrompt.js";
 import { dedupeBatch, canonicalUrlKey } from "./jobIdentity.js";
 import { loadJobIndex, upgradeExistingJob } from "./jobIndex.js";
-import { isRelevantTitle, looksLikeSeniorTitle } from "./titleFilter.js";
+import { isRelevantTitle, looksLikeSeniorTitle, isExcludedCompany } from "./titleFilter.js";
 
 // Per-company cap on SmartRecruiters detail requests, and page cap on the
 // Amazon search API — both fetch N+1 requests per source, so they need a
@@ -577,6 +577,7 @@ async function fetchJobsFromSource(source) {
  * even when the title says nothing about the domain.
  */
 export function isRelevantJob(job, source = null) {
+  if (isExcludedCompany(job.company)) return false;
   return isRelevantTitle(job.title, { broad: source?.broadFilter === true });
 }
 

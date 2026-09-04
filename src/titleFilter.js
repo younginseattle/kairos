@@ -130,6 +130,24 @@ export const EXCLUSION_PATTERNS = [
 ];
 
 /**
+ * Companies that are not real employers — job board / staffing-agency
+ * services that repost roles from many different companies into LinkedIn's
+ * own alert digest under their own name. A hit here is never the actual
+ * employer, just a reposting middleman: the real posting (if still open) is
+ * either already in the pipeline under its real company, or not reachable
+ * at all, and scoring "Ladders" or "Jobgether" as if it were the employer
+ * produces a meaningless fit evaluation either way.
+ */
+export const EXCLUDED_COMPANY_WORDS = ["jobgether", "ladders"];
+
+export const EXCLUDED_COMPANIES = EXCLUDED_COMPANY_WORDS.map(w => new RegExp(`\\b${w}\\b`, "i"));
+
+export function isExcludedCompany(company) {
+  if (!company) return false;
+  return EXCLUDED_COMPANIES.some(re => re.test(String(company)));
+}
+
+/**
  * Loose "does this line read like a seniority-level PM title" check, with
  * no exclusion or scope rules applied. Used by the LinkedIn email parsers
  * to pick the title line out of a job card — the real relevance decision

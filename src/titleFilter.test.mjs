@@ -8,7 +8,7 @@
  * Run:  node src/titleFilter.test.mjs
  */
 
-import { isRelevantTitle, looksLikeSeniorTitle, explainTitle } from "./titleFilter.js";
+import { isRelevantTitle, looksLikeSeniorTitle, explainTitle, isExcludedCompany } from "./titleFilter.js";
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -110,6 +110,23 @@ for (const [line, expected] of [
   const got = looksLikeSeniorTitle(line);
   if (got === expected) { passed++; console.log(`  ✓ ${got ? "TITLE" : "not  "}  ${line}`); }
   else { failed++; failures.push(`looksLikeSeniorTitle("${line}") — expected ${expected}, got ${got}`); console.log(`  ✗ ${line}`); }
+}
+
+console.log("\nExcluded companies — job-board / staffing-agency reposts, not real employers");
+for (const [company, expected] of [
+  ["Jobgether", true],
+  ["Ladders", true],
+  ["The Ladders", true],
+  ["Ladders.com", true],
+  ["Jobgether Inc.", true],
+  ["Datadog", false],
+  ["Grafana Labs", false],
+  ["", false],
+  [null, false],
+]) {
+  const got = isExcludedCompany(company);
+  if (got === expected) { passed++; console.log(`  ✓ ${expected ? "EXCLUDED" : "kept    "}  ${company}`); }
+  else { failed++; failures.push(`isExcludedCompany(${JSON.stringify(company)}) — expected ${expected}, got ${got}`); console.log(`  ✗ ${company}`); }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -106,6 +106,12 @@ Rules:
   (Revenue/Business/People/Customer/etc. Operations) — a bare `/\boperations\b/i` used to
   also block "IT Operations Management" and "Network Operations", which is Matt's other
   named proof-point domain (ITOM/AIOps), not noise.
+- `EXCLUDED_COMPANIES` / `isExcludedCompany(company)` — separate from the title rules
+  above, this blocks by company name: job-board / staffing-agency services (Jobgether,
+  Ladders) that repost roles from many employers into LinkedIn's alert digest under their
+  own name. Not a real employer, so a hit here is dropped regardless of title — checked in
+  `ingestion.js` `isRelevantJob()` and in `fetch-jobs.js` `applyCommonFilters()` (added
+  2026-09-04 after these two names showed up dozens of times in the unscored-jobs backlog).
 
 Pinned by `src/titleFilter.test.mjs` (`node src/titleFilter.test.mjs`).
 
@@ -238,6 +244,10 @@ postings — many likely no longer open. `--since` (same flag/semantics as
 aren't scored for nothing; there's no separate "date posted" column, so `created_at`
 (when the row entered the pipeline) is the closest available proxy. The Action defaults
 `since` to `30d`; pass a blank value to sweep the full backlog instead.
+
+The query also excludes `EXCLUDED_COMPANIES` (`src/titleFilter.js`) — Jobgether and
+Ladders showed up dozens of times in that backlog, both job-board reposters rather than
+real employers.
 
 ```bash
 node --env-file=.env scripts/score-unscored-jobs.mjs --plan               # list selection, no calls
