@@ -46,6 +46,7 @@ const { createClient } = await import('@supabase/supabase-js');
 const { fetchJobDescription, describeFromRow, isStubDescription } = await import('../src/bulkImport.js');
 const { runClaudeEvaluation } = await import('../src/ingestion.js');
 const { shouldAutoPass } = await import('../src/scoring.js');
+const { EXCLUDED_COMPANY_WORDS } = await import('../src/titleFilter.js');
 
 const PLAN    = process.argv.includes('--plan');
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -89,6 +90,10 @@ let query = supabase
   .is('score', null)
   .order('created_at', { ascending: true });
 if (SINCE) query = query.gte('created_at', SINCE);
+// Job-board / staffing-agency reposts (Jobgether, Ladders) aren't real
+// employers — scoring "the company" as if it were one is a wasted call.
+// See EXCLUDED_COMPANIES in src/titleFilter.js.
+for (const word of EXCLUDED_COMPANY_WORDS) query = query.not('company', 'ilike', `%${word}%`);
 if (LIMIT) query = query.limit(LIMIT);
 
 const { data: rows, error } = await query;

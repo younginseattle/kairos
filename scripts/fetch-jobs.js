@@ -22,7 +22,7 @@
 import ws from 'ws';
 import * as cheerio from 'cheerio';
 import { dedupeBatch } from '../src/jobIdentity.js';
-import { isRelevantTitle, explainTitle, looksLikeSeniorTitle } from '../src/titleFilter.js';
+import { isRelevantTitle, explainTitle, looksLikeSeniorTitle, isExcludedCompany } from '../src/titleFilter.js';
 import { runBulkImport } from '../src/bulkImport.js';
 
 // Must be set before @supabase/supabase-js is loaded — it checks
@@ -260,6 +260,10 @@ function applyCommonFilters(title, company, location, url, emailIndex, urlCount,
     if (VERBOSE) {
       console.log(`    ✗ SKIP: ${explainTitle(title, LINKEDIN_TITLE_OPTS).reason}`);
     }
+    return null;
+  }
+  if (isExcludedCompany(company)) {
+    if (VERBOSE) console.log(`    ✗ SKIP: excluded company (job board / staffing agency): ${JSON.stringify(company)}`);
     return null;
   }
   if (!isUSLocation(location)) {
