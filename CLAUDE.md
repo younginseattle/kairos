@@ -232,10 +232,18 @@ still sitting at `score: null`. Same fetch-JD-or-stub → score → auto-pass lo
 existing rows instead of new ones. Query excludes already-scored rows, so it's safe to
 re-run.
 
+The backlog this shipped to fix was ~946 rows deep, almost all old `linkedin_alert`
+postings — many likely no longer open. `--since` (same flag/semantics as
+`rescore-jobs.mjs`) narrows the selection by `created_at` so old, probably-stale rows
+aren't scored for nothing; there's no separate "date posted" column, so `created_at`
+(when the row entered the pipeline) is the closest available proxy. The Action defaults
+`since` to `30d`; pass a blank value to sweep the full backlog instead.
+
 ```bash
-node --env-file=.env scripts/score-unscored-jobs.mjs --plan       # list selection, no calls
-node --env-file=.env scripts/score-unscored-jobs.mjs --dry-run    # fetch + score, don't write
-node --env-file=.env scripts/score-unscored-jobs.mjs              # write
+node --env-file=.env scripts/score-unscored-jobs.mjs --plan               # list selection, no calls
+node --env-file=.env scripts/score-unscored-jobs.mjs --dry-run --since=30d  # fetch + score, don't write
+node --env-file=.env scripts/score-unscored-jobs.mjs --since=30d          # write, last 30 days only
+node --env-file=.env scripts/score-unscored-jobs.mjs                      # write, entire backlog
 ```
 
 Must run where LinkedIn is reachable — run via the `Score Unscored Jobs` Action, not a dev

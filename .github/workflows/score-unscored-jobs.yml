@@ -17,8 +17,12 @@ on:
         type: choice
         options: [plan, dry-run, write]
         default: plan
+      since:
+        description: 'Only rows created in the last N days (e.g. 30d) or since a date. Blank = no cutoff (every unscored row, including old backlog).'
+        required: false
+        default: '30d'
       limit:
-        description: 'Max rows to process. Blank = no cap (processes every unscored row).'
+        description: 'Max rows to process. Blank = no cap.'
         required: false
         default: ''
 
@@ -48,6 +52,7 @@ jobs:
             plan)    ARGS="$ARGS --plan" ;;
             dry-run) ARGS="$ARGS --dry-run" ;;
           esac
+          if [ -n "${{ inputs.since }}" ]; then ARGS="$ARGS --since=${{ inputs.since }}"; fi
           if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit=${{ inputs.limit }}"; fi
           echo "Running: node scripts/score-unscored-jobs.mjs $ARGS"
           node scripts/score-unscored-jobs.mjs $ARGS

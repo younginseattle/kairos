@@ -23,7 +23,16 @@
  *
  *   node --env-file=.env scripts/score-unscored-jobs.mjs --plan
  *   node --env-file=.env scripts/score-unscored-jobs.mjs --dry-run --limit=5
+ *   node --env-file=.env scripts/score-unscored-jobs.mjs --since=30d
  *   node --env-file=.env scripts/score-unscored-jobs.mjs
+ *
+ * --since=30d (or a bare number of days, or an ISO date) narrows the
+ * selection to rows created in that window — same flag and semantics as
+ * rescore-jobs.mjs. There's no separate "date posted" column; created_at is
+ * when the row entered the pipeline, which for a LinkedIn-alert row is close
+ * enough to the posting date to use as the cutoff. Recommended for this
+ * backlog: hundreds of these rows are old LinkedIn-alert postings that may
+ * no longer even be open, and scoring a stale listing is a wasted API call.
  *
  * Must run where LinkedIn is reachable — a dev sandbox's egress proxy blocks
  * it the same way it blocks ATS hosts. Run via the "Score Unscored Jobs"
@@ -43,6 +52,25 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const limitArg = process.argv.find(a => a.startsWith('--limit='));
 const LIMIT    = limitArg ? parseInt(limitArg.split('=')[1], 10) : null;
 
+/** Accepts "30d", "30", or an ISO date. Returns an ISO cutoff, or null. */
+function parseSince(raw) {
+  if (!raw) return null;
+  const m = /^(\d+)\s*d?$/i.exec(raw.trim());
+  if (m) {
+    const d = new Date();
+    d.setDate(d.getDate() - parseInt(m[1], 10));
+    return d.toISOString();
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    console.error(`✗ --since="${raw}" is not a number of days or a date`);
+    process.exit(1);
+  }
+  return parsed.toISOString();
+}
+const sinceArg = process.argv.find(a => a.startsWith('--since='));
+const SINCE    = parseSince(sinceArg ? sinceArg.split('=')[1] : null);
+
 const SUPABASE_URL  = process.env.VITE_SUPABASE_URL  || process.env.SUPABASE_URL;
 const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY   || process.env.VITE_ANTHROPIC_KEY;
@@ -60,12 +88,15 @@ let query = supabase
   .select('id, title, company, location, url, description, source, comp_verified_tc, burden_verified')
   .is('score', null)
   .order('created_at', { ascending: true });
+if (SINCE) query = query.gte('created_at', SINCE);
 if (LIMIT) query = query.limit(LIMIT);
 
 const { data: rows, error } = await query;
 if (error) { console.error(`✗ Query failed: ${error.message}`); process.exit(1); }
 
-console.log(`\n◆ ${rows.length} unscored row(s) selected${LIMIT ? ` (limit ${LIMIT})` : ''}\n`);
+console.log(`\n◆ ${rows.length} unscored row(s) selected` +
+            `${SINCE ? ` (created since ${SINCE.slice(0, 10)})` : ''}` +
+            `${LIMIT ? ` (limit ${LIMIT})` : ''}\n`);
 
 if (PLAN) {
   rows.forEach(r => console.log(`  · ${r.title} — ${r.company} (${r.source || 'unknown source'})`));
