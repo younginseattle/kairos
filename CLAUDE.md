@@ -211,6 +211,36 @@ for a file on disk, this one is the shared module the browser also loads.
 
 Tests: `node src/bulkImport.test.mjs` (offline — HTTP is stubbed on localhost).
 
+### `scripts/fetch-jobs.js`
+Parses LinkedIn job-alert digest emails out of Gmail and feeds the results through
+`runBulkImport()` (`src/bulkImport.js`) — the same fetch-JD → dedup → insert → score →
+auto-pass path curated-list imports use. Run by the `Fetch Job Alerts` Action every 6h.
+
+Until 2026-09-04 this had its own hand-rolled insert loop that wrote only
+title/company/location/url/status — no JD fetch, no Claude scoring. Those rows sat at
+`score: null` forever, which hides a row from both the Discover tab's top-jobs list and the
+main Saved-tab pipeline view (both filter on `score != null`) — the only way to see one was
+the Saved tab's "Unscored" filter chip. Switched to `runBulkImport()` so a LinkedIn-alert
+row gets a real JD fetch and a Claude score on insert, exactly like an ATS-sourced row; when
+the JD isn't fetchable (LinkedIn's own `/jobs/view/` pages aren't always scrapable without
+login) it falls back to a title/location-only stub and scores that instead, at lower
+confidence, rather than leaving the row invisible.
+
+### `scripts/score-unscored-jobs.mjs`
+One-time (re-runnable) backfill for rows that predate the 2026-09-04 fix above and are
+still sitting at `score: null`. Same fetch-JD-or-stub → score → auto-pass logic, applied to
+existing rows instead of new ones. Query excludes already-scored rows, so it's safe to
+re-run.
+
+```bash
+node --env-file=.env scripts/score-unscored-jobs.mjs --plan       # list selection, no calls
+node --env-file=.env scripts/score-unscored-jobs.mjs --dry-run    # fetch + score, don't write
+node --env-file=.env scripts/score-unscored-jobs.mjs              # write
+```
+
+Must run where LinkedIn is reachable — run via the `Score Unscored Jobs` Action, not a dev
+sandbox (same egress restriction as `verify-boards.mjs`).
+
 ### `src/run-briefing.mjs`
 Node.js script. Queries Supabase for last 24h jobs. Writes markdown briefing to `~/Desktop`. Run as:
 ```bash
