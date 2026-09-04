@@ -14,13 +14,16 @@
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  *   FETCH_INTERVAL_HOURS  (optional, default 6)
+ *   ANTHROPIC_API_KEY     (optional — without it, rows insert but stay
+ *                          unscored, same as a missing key anywhere else in
+ *                          the pipeline; see runBulkImport() in bulkImport.js)
  */
 
 import ws from 'ws';
 import * as cheerio from 'cheerio';
 import { dedupeBatch } from '../src/jobIdentity.js';
-import { loadJobIndex, upgradeExistingJob } from '../src/jobIndex.js';
 import { isRelevantTitle, explainTitle, looksLikeSeniorTitle } from '../src/titleFilter.js';
+import { runBulkImport } from '../src/bulkImport.js';
 
 // Must be set before @supabase/supabase-js is loaded — it checks
 // globalThis.WebSocket at import time and throws on Node < 22 without it.
@@ -43,6 +46,10 @@ const GMAIL_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || process.env.GOOGL
 const GMAIL_REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || process.env.GOOGLE_REFRESH_TOKEN;
 const SUPABASE_URL        = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Not hard-required — same graceful degradation as runBulkImport() itself:
+// missing key means rows still get inserted, just left at score: null rather
+// than blocking ingestion entirely.
+const ANTHROPIC_API_KEY   = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_KEY;
 
 if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN) {
   console.error('✗ Missing Gmail credentials (GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET / GMAIL_REFRESH_TOKEN)');
@@ -51,6 +58,9 @@ if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REFRESH_TOKEN) {
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('✗ Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
   process.exit(1);
+}
+if (!ANTHROPIC_API_KEY) {
+  console.warn('⚠ No ANTHROPIC_API_KEY — jobs will be inserted but left unscored (score: null).');
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -449,30 +459,17 @@ function buildSupabaseClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-// Dedup runs against a loaded index rather than a per-URL query.
-//
-// URL matching alone (LinkedIn's /jobs/view/{id} vs /comm/jobs/view/{id})
-// only ever caught the same link twice. The roles arriving here are also
-// posted on the company's own ATS board and picked up by src/ingestion.js
-// under a completely different URL — which is how one role ended up in the
-// pipeline three times. The index keys on company+title as well, so a role
-// already discovered elsewhere is recognised no matter which site it came
-// from. See src/jobIdentity.js.
-async function insertJob(supabase, job) {
-  const { error } = await supabase.from('jobs').insert({
-    title:    job.title,
-    company:  job.company,
-    location: job.location,
-    url:      job.url,
-    status:   'new',
-    source:   'linkedin_alert',
-  });
-  if (error) {
-    console.error(`  ✗ Insert failed for "${job.title}" (${job.url}):`, error.message);
-    return false;
-  }
-  return true;
-}
+// Insert, dedup, JD fetch and scoring are all delegated to runBulkImport()
+// (src/bulkImport.js) — the same back half ATS ingestion and curated-list
+// import use. It already handles:
+//   · dedup against the existing pipeline by URL AND by company+title
+//     identity (a role posted here is often also on the company's own ATS
+//     board under a completely different URL — see src/jobIdentity.js)
+//   · repointing an existing row at this link when it is more authoritative
+//   · fetching the actual JD from the link and scoring it with Claude, so a
+//     LinkedIn-alert row is scored exactly like an ATS-sourced one instead
+//     of sitting invisible at score: null until someone finds it under the
+//     Saved tab's "Unscored" filter and scores it by hand
 
 // ─────────────────────────────────────────────────────────────────
 // Main
@@ -505,43 +502,20 @@ async function main() {
     return;
   }
 
-  // 3. Dedup against the existing pipeline and insert
+  // 3. Dedup against the existing pipeline, fetch JD, insert, score
   console.log('── Inserting into Supabase…');
-  const index = await loadJobIndex(supabase, {
-    log:      msg => console.log(`  ${msg}`),
-    logError: msg => console.error(`  ✗ ${msg}`),
+  const result = await runBulkImport(supabase, ANTHROPIC_API_KEY, uniqueJobs, {
+    source:            'linkedin_alert',
+    fetchDescriptions: true,
   });
-  let inserted = 0, skipped = 0, failed = 0, upgraded = 0;
-
-  for (const job of uniqueJobs) {
-    const existing = index.find(job);
-    if (existing) {
-      skipped++;
-      if (existing.reason === 'identity') {
-        console.log(`  ≡ ${job.title} — ${job.company} (already in pipeline via ${existing.row.source || 'unknown source'})`);
-      }
-      const didUpgrade = await upgradeExistingJob(supabase, existing.row, job, {
-        log:      msg => console.log(msg),
-        logError: msg => console.error(`  ✗ ${msg}`),
-      });
-      if (didUpgrade) upgraded++;
-      continue;
-    }
-    const ok = await insertJob(supabase, job);
-    if (ok) {
-      inserted++;
-      index.add({ ...job, source: 'linkedin_alert' });
-      console.log(`  ✓ ${job.title} — ${job.company}`);
-    } else {
-      failed++;
-    }
-  }
 
   console.log(`\n── Summary`);
-  console.log(`   Inserted : ${inserted}`);
-  console.log(`   Skipped  : ${skipped} (already in pipeline)`);
-  if (upgraded > 0) console.log(`   Upgraded : ${upgraded} (existing row repointed at a better source)`);
-  if (failed > 0) console.log(`   Failed   : ${failed}`);
+  console.log(`   Inserted   : ${result.imported}`);
+  console.log(`   Skipped    : ${result.skipped} (already in pipeline)`);
+  console.log(`   With JD    : ${result.withJd}`);
+  console.log(`   Stub only  : ${result.stubbed} (JD not fetchable — scored on title/location alone)`);
+  console.log(`   Evaluated  : ${result.evaluated}`);
+  if (result.autoPassed > 0) console.log(`   Auto-passed: ${result.autoPassed}`);
   console.log('   Done ✓\n');
 }
 

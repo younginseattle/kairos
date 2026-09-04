@@ -1,0 +1,53 @@
+name: Score Unscored Jobs
+
+# One-time (re-runnable) backfill for rows sitting at score: null — mainly
+# LinkedIn-alert rows inserted before scripts/fetch-jobs.js started scoring
+# on insert. Fetches each row's JD (best-effort) and scores it with Claude,
+# same as every other ingestion path. Safe to re-run: already-scored rows
+# are excluded by the query itself.
+#
+# Run with mode = plan first. That makes no API calls and prints exactly
+# which rows would be processed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan = list selection, no API calls · dry-run = fetch JDs and call Claude but do not write · write = call and persist'
+        type: choice
+        options: [plan, dry-run, write]
+        default: plan
+      limit:
+        description: 'Max rows to process. Blank = no cap (processes every unscored row).'
+        required: false
+        default: ''
+
+jobs:
+  score:
+    name: Fetch JD and score unscored rows
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Score unscored jobs
+        env:
+          VITE_SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ANTHROPIC_API_KEY:      ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ARGS=""
+          case "${{ inputs.mode }}" in
+            plan)    ARGS="$ARGS --plan" ;;
+            dry-run) ARGS="$ARGS --dry-run" ;;
+          esac
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit=${{ inputs.limit }}"; fi
+          echo "Running: node scripts/score-unscored-jobs.mjs $ARGS"
+          node scripts/score-unscored-jobs.mjs $ARGS
