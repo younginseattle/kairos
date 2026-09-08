@@ -1,4 +1,4 @@
-name: Rescore Jobs (re-extraction)
+name: "Score: Re-extract With Claude (paid)"
 
 # Re-reads job descriptions with Claude and rescores them. Unlike Recompute
 # Fit Scores, this COSTS ONE CLAUDE CALL PER ROW — it is the only way to pick

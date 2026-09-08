@@ -1,4 +1,4 @@
-name: Find Jobs
+name: "Lookup: Job Row by Title/Company"
 
 # Read-only lookup for diagnosing "I don't see X in the app" reports.
 # Writes nothing. Reuses the same Supabase secrets every other script does.

@@ -1,4 +1,4 @@
-name: Score Unscored Jobs
+name: "Score: Backfill Never-Scored Rows"
 
 # One-time (re-runnable) backfill for rows sitting at score: null — mainly
 # LinkedIn-alert rows inserted before scripts/fetch-jobs.js started scoring

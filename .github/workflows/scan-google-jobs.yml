@@ -1,4 +1,4 @@
-name: Scan Google Careers Emails
+name: "Ingest: Google Careers Alerts"
 
 on:
   schedule:

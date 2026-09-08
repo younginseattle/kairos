@@ -1,4 +1,4 @@
-name: Verify Job Boards
+name: "Maintain: Verify Candidate ATS Boards"
 
 # Probes the unverified board IDs in src/candidateSources.js against the
 # live ATS APIs. Runs here rather than locally because dev sandboxes proxy

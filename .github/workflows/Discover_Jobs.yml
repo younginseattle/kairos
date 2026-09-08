@@ -1,4 +1,4 @@
-name: Discover Jobs
+name: "Ingest: ATS Job Boards"
 
 on:
   schedule:

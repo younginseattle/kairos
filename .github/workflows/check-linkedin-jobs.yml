@@ -1,4 +1,4 @@
-name: Check LinkedIn Job Status
+name: "Maintain: Close Expired LinkedIn Listings"
 
 on:
   schedule:
