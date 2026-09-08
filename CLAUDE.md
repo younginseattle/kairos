@@ -121,7 +121,7 @@ go here, get probed by `scripts/verify-boards.mjs`, and only confirmed entries a
 promoted. A wrong board token and a company with public API access disabled both
 return 404, so guessing directly into `SOURCES` silently rots it.
 
-20 candidates added 2026-08-25, resolved by the 2026-08-27 Verify Job Boards run: 13
+20 candidates added 2026-08-25, resolved by the 2026-08-27 `Maintain: Verify Candidate ATS Boards` run: 13
 promoted into `SOURCES` (Sysdig, LogicMonitor, Axiom, OpenAI, Cohere, CockroachDB,
 PlanetScale, Redis, Kong, Docker, Netlify, Buildkite, JFrog) and 7 moved to
 `KNOWN_UNREACHABLE` below (ExtraHop, incident.io, Hugging Face, Mistral AI, Perplexity AI,
@@ -130,7 +130,7 @@ on one and 404 on the rest.
 
 ### `scripts/verify-boards.mjs`
 Probes every candidate board and prints paste-ready `SOURCES` lines for the ones
-that respond. **Run it in GitHub Actions** (`Verify Job Boards` → workflow_dispatch),
+that respond. **Run it in GitHub Actions** (`Maintain: Verify Candidate ATS Boards` → workflow_dispatch),
 not in a dev sandbox — sandbox egress proxies block the ATS hosts and every board
 looks dead.
 
@@ -166,7 +166,7 @@ Two paths, and the difference is money:
 `--plan` to spend nothing. Which rows are stale is decided by `src/staleSignals.js`,
 pinned by `src/staleSignals.test.mjs`.
 
-Both have workflow_dispatch workflows (`Recompute Fit Scores`, `Rescore Jobs`).
+Both have workflow_dispatch workflows (`Score: Recompute From Extraction (free)`, `Score: Re-extract With Claude (paid)`).
 **Both default to the repo's default branch** — pick the working branch in the
 Run workflow dropdown, or the run replays the old model and nothing moves.
 
@@ -220,7 +220,7 @@ Tests: `node src/bulkImport.test.mjs` (offline — HTTP is stubbed on localhost)
 ### `scripts/fetch-jobs.js`
 Parses LinkedIn job-alert digest emails out of Gmail and feeds the results through
 `runBulkImport()` (`src/bulkImport.js`) — the same fetch-JD → dedup → insert → score →
-auto-pass path curated-list imports use. Run by the `Fetch Job Alerts` Action every 6h.
+auto-pass path curated-list imports use. Run by the `Ingest: LinkedIn Alerts` Action every 6h.
 
 Until 2026-09-04 this had its own hand-rolled insert loop that wrote only
 title/company/location/url/status — no JD fetch, no Claude scoring. Those rows sat at
@@ -256,7 +256,7 @@ node --env-file=.env scripts/score-unscored-jobs.mjs --since=30d          # writ
 node --env-file=.env scripts/score-unscored-jobs.mjs                      # write, entire backlog
 ```
 
-Must run where LinkedIn is reachable — run via the `Score Unscored Jobs` Action, not a dev
+Must run where LinkedIn is reachable — run via the `Score: Backfill Never-Scored Rows` Action, not a dev
 sandbox (same egress restriction as `verify-boards.mjs`).
 
 ### `src/run-briefing.mjs`
@@ -264,6 +264,33 @@ Node.js script. Queries Supabase for last 24h jobs. Writes markdown briefing to 
 ```bash
 node --env-file=.env src/run-briefing.mjs
 ```
+
+---
+
+## GitHub Actions
+
+10 workflows in `.github/workflows/`, named with a category prefix (added 2026-09-08 after
+the flat list grew confusing — `Score Unscored Jobs`, `Rescore Jobs`, and `Recompute Fit
+Scores` all sounded like the same action). The category is the display name only; filenames
+and behavior are unchanged, so this was a pure rename with zero risk to run history.
+
+**Ingest — scheduled, run themselves, rarely need manual attention:**
+- `Ingest: ATS Job Boards` (`Discover_Jobs.yml`) — polls `SOURCES` company boards, every 12h
+- `Ingest: LinkedIn Alerts` (`fetch-jobs.yml`) — parses LinkedIn digest emails, every 6h
+- `Ingest: Google Careers Alerts` (`scan-google-jobs.yml`) — parses Google Careers alert emails, scheduled
+
+**Maintain — manual, occasional upkeep:**
+- `Maintain: Close Expired LinkedIn Listings` (`check-linkedin-jobs.yml`) — marks stale LinkedIn rows `closed`, daily
+- `Maintain: Dedupe Existing Rows` (`dedupe-jobs.yml`) — collapses duplicate rows already in the table
+- `Maintain: Verify Candidate ATS Boards` (`verify-boards.yml`) — probes `CANDIDATE_SOURCES` tokens before promoting to `SOURCES`
+
+**Score — three genuinely different operations, easy to conflate by name alone:**
+- `Score: Backfill Never-Scored Rows` (`score-unscored-jobs.yml`) — rows with `score IS NULL` that were never evaluated at all
+- `Score: Re-extract With Claude (paid)` (`rescore-jobs.yml`) — rows that already have a score but need a fresh Claude call (prompt/vocabulary changed) — 1 call/row
+- `Score: Recompute From Extraction (free)` (`recompute-scores.yml`) — replays `scoring.js` math over an already-stored extraction — no Claude calls
+
+**Lookup — read-only diagnostics:**
+- `Lookup: Job Row by Title/Company` (`find-jobs.yml`) — finds a row by substring match, prints status/score/created_at/url. Writes nothing.
 
 ---
 
@@ -437,25 +464,25 @@ unscored row can end up hundreds of cards below the fold. Switch sort to "newest
 "Unscored" filter chip to actually see them. The Discover tab's top-jobs widget is the one
 view that truly excludes them (`score != null && final_score >= 75`).
 
-Confirmed 2026-09-04: a `Score Unscored Jobs` backfill run burned through the monthly
+Confirmed 2026-09-04: a `Score: Backfill Never-Scored Rows` backfill run burned through the monthly
 credit limit partway through (90 rows scored, then every remaining call failed with a
 `Claude API HTTP 400` — Anthropic returns 400, not 429, for an exhausted balance, not a
 per-request problem). The failure is a clean, total cutover: once it starts, nothing
 scores until credits reset. No code path retries a failed Claude call. **Confirmed still
-ongoing as of 2026-09-08 02:04 UTC** — every scheduled `Discover Jobs` and `Fetch Job
-Alerts` run since has kept inserting fine and hitting the identical HTTP 400 on every
+ongoing as of 2026-09-08 02:04 UTC** — every scheduled `Ingest: ATS Job Boards` and
+`Ingest: LinkedIn Alerts` run since has kept inserting fine and hitting the identical HTTP 400 on every
 single Claude call, several days after the initial exhaustion, not just the rest of that
 one day. Don't assume a monthly limit has reset just because a few days have passed —
 check the actual Actions logs for a recent run before ruling the outage over. Two
 Docker roles (`Staff Product Manager, Infrastructure & AI Dev Tools`, `Senior Principal
 Product Manager, AI & Agent Platform`) have been sitting unscored since before this
 outage even started, re-surfacing as "already in pipeline" dedup hits on nearly every
-`Fetch Job Alerts` run since — correctly deduped, just never scored, and easy to mistake
+`Ingest: LinkedIn Alerts` run since — correctly deduped, just never scored, and easy to mistake
 for "missing" because of the sort behavior above.
 
 Recovery needs no code change once the key has credit again — scheduled runs resume
 scoring new insertions automatically. But anything inserted during the outage window is
-still sitting at `score: null` and needs a manual `Score Unscored Jobs` run to backfill.
+still sitting at `score: null` and needs a manual `Score: Backfill Never-Scored Rows` run to backfill.
 Once an outage has run for days rather than hours, don't scope the backfill with the
 default `since: 30d` alone without checking it actually covers the outage's start —
 run `--plan` first to confirm the row count and date range look right, widening `since`

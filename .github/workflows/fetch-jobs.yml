@@ -1,4 +1,4 @@
-name: Fetch Job Alerts
+name: "Ingest: LinkedIn Alerts"
 
 on:
   schedule:

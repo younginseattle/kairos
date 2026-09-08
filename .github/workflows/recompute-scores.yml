@@ -1,4 +1,4 @@
-name: Recompute Fit Scores
+name: "Score: Recompute From Extraction (free)"
 
 # Replays the current scoring model over every job that already has a stored
 # extraction. Costs nothing — scoring v2 separates the paid Claude extraction

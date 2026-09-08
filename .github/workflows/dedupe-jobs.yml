@@ -1,4 +1,4 @@
-name: Dedupe Existing Jobs
+name: "Maintain: Dedupe Existing Rows"
 
 # Collapses roles that were cross-posted to several sites and inserted more
 # than once before identity dedup existed. Costs nothing — no Claude calls.
