@@ -419,6 +419,48 @@ All prompts are defined as constants in their respective files:
 
 All prompts return **raw JSON only** — no markdown fences, no preamble. Parse with `JSON.parse()` after stripping any accidental backtick fences.
 
+### When `ANTHROPIC_API_KEY` is out of credits
+
+Every insert path (`runJobIngestion` in `ingestion.js`, `runBulkImport` in `bulkImport.js` —
+which `fetch-jobs.js` now uses too, see above) inserts the row **before** attempting to
+score it, and treats a failed Claude call as "leave `score: null` and move on," not as a
+reason to fail the insert. So an exhausted key does not stop discovery: new jobs from
+every source keep landing in Supabase, correctly filtered and deduped, for as long as
+ingestion runs on schedule. What it does stop is scoring — every new row, from ATS boards
+*and* LinkedIn alerts alike, piles up at `score: null`.
+
+An unscored row is **not** filtered out of the Saved tab — `savedFilter.pursuit` defaults
+to `"all"`, which shows it — but `savedSort` defaults to `"score"`, which sorts every
+`score == null` row after every scored row (App.jsx, the saved-list sort comparator), so
+it reads as missing rather than merely unsorted: with the backlog growing daily, an
+unscored row can end up hundreds of cards below the fold. Switch sort to "newest" or the
+"Unscored" filter chip to actually see them. The Discover tab's top-jobs widget is the one
+view that truly excludes them (`score != null && final_score >= 75`).
+
+Confirmed 2026-09-04: a `Score Unscored Jobs` backfill run burned through the monthly
+credit limit partway through (90 rows scored, then every remaining call failed with a
+`Claude API HTTP 400` — Anthropic returns 400, not 429, for an exhausted balance, not a
+per-request problem). The failure is a clean, total cutover: once it starts, nothing
+scores until credits reset. No code path retries a failed Claude call. **Confirmed still
+ongoing as of 2026-09-08 02:04 UTC** — every scheduled `Discover Jobs` and `Fetch Job
+Alerts` run since has kept inserting fine and hitting the identical HTTP 400 on every
+single Claude call, several days after the initial exhaustion, not just the rest of that
+one day. Don't assume a monthly limit has reset just because a few days have passed —
+check the actual Actions logs for a recent run before ruling the outage over. Two
+Docker roles (`Staff Product Manager, Infrastructure & AI Dev Tools`, `Senior Principal
+Product Manager, AI & Agent Platform`) have been sitting unscored since before this
+outage even started, re-surfacing as "already in pipeline" dedup hits on nearly every
+`Fetch Job Alerts` run since — correctly deduped, just never scored, and easy to mistake
+for "missing" because of the sort behavior above.
+
+Recovery needs no code change once the key has credit again — scheduled runs resume
+scoring new insertions automatically. But anything inserted during the outage window is
+still sitting at `score: null` and needs a manual `Score Unscored Jobs` run to backfill.
+Once an outage has run for days rather than hours, don't scope the backfill with the
+default `since: 30d` alone without checking it actually covers the outage's start —
+run `--plan` first to confirm the row count and date range look right, widening `since`
+or clearing it if the outage predates the window.
+
 ---
 
 ## Environment Variables
