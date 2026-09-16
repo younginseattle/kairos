@@ -352,6 +352,8 @@ const PURSUIT_CONFIG = {
   PASS:      { label: "PASS",      color: T.textMuted, bg: T.surface, border: T.border,      icon: "○" },
 };
 
+const SAVED_PAGE_SIZE = 25;
+
 const REC_CONFIG = {
   apply:           { label: "Apply Now",     color: T.green,    bg: T.greenBg,  border: T.greenBorder  },
   apply_with_note: { label: "Apply w/ Note", color: T.blue,     bg: T.blueBg,   border: T.blueBorder   },
@@ -809,6 +811,101 @@ function FilterBar({ filter, onChange, pills = [], placeholder = "Search…", co
       )}
       {count !== undefined && total !== undefined && count !== total && (
         <span style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, marginLeft: "auto" }}>{count} / {total}</span>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PAGINATION
+// ─────────────────────────────────────────────────────────────────
+function Pagination({ page, pageCount, total, pageSize, onChange }) {
+  if (pageCount <= 1) return null;
+  const btnStyle = (disabled) => ({ fontFamily: T.fontMono, fontSize: 10, fontWeight: 600, padding: "4px 9px", borderRadius: 4, cursor: disabled ? "default" : "pointer", border: `1px solid ${T.border}`, background: "transparent", color: disabled ? T.textMuted : T.textSecondary, opacity: disabled ? 0.4 : 1 });
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  // Windowed page numbers: first, last, and up to 2 neighbours either side of current.
+  const pages = [];
+  for (let p = 1; p <= pageCount; p++) {
+    if (p === 1 || p === pageCount || Math.abs(p - page) <= 2) pages.push(p);
+    else if (pages[pages.length - 1] !== "…") pages.push("…");
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", margin: "12px 0", padding: "8px 10px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 6 }}>
+      <span style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted }}>{from}–{to} of {total}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <button style={btnStyle(page === 1)} disabled={page === 1} onClick={() => onChange(1)}>« First</button>
+        <button style={btnStyle(page === 1)} disabled={page === 1} onClick={() => onChange(page - 1)}>‹ Prev</button>
+        {pages.map((p, i) => p === "…"
+          ? <span key={`e${i}`} style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted, padding: "0 4px" }}>…</span>
+          : <button key={p} onClick={() => onChange(p)} style={{ ...btnStyle(false), minWidth: 26, ...(p === page ? { borderColor: T.accentDim, background: T.greenBg, color: T.green } : {}) }}>{p}</button>
+        )}
+        <button style={btnStyle(page === pageCount)} disabled={page === pageCount} onClick={() => onChange(page + 1)}>Next ›</button>
+        <button style={btnStyle(page === pageCount)} disabled={page === pageCount} onClick={() => onChange(pageCount)}>Last »</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PIPELINE DASHBOARD — clickable stat widgets + a bar-chart graphic
+// ─────────────────────────────────────────────────────────────────
+const PIPELINE_STATUSES = [
+  { key: "new",          label: "New",          color: "textMuted" },
+  { key: "reviewing",    label: "Reviewing",    color: "blue"      },
+  { key: "applied",      label: "Applied",      color: "green"     },
+  { key: "interviewing", label: "Interviewing", color: "green"     },
+  { key: "offer",        label: "Offer",        color: "green"     },
+  { key: "pass",         label: "Passed",       color: "textMuted" },
+  { key: "rejected",     label: "Rejected",     color: "red"       },
+  { key: "closed",       label: "Closed",       color: "textMuted" },
+];
+
+function PipelineDashboard({ jobs, activeStatus, onFilterStatus }) {
+  const total = jobs.length;
+  const counts = Object.fromEntries(PIPELINE_STATUSES.map(({ key }) => [key, jobs.filter(j => j.status === key).length]));
+  const maxCount = Math.max(1, ...PIPELINE_STATUSES.map(s => counts[s.key]));
+
+  const widgets = [
+    { key: "all", label: "Total", value: total, color: T.textSecondary, bg: T.panel },
+    ...PIPELINE_STATUSES.map(s => ({ key: s.key, label: s.label, value: counts[s.key], color: T[s.color], bg: s.color === "textMuted" ? T.panel : T[`${s.color}Bg`] })),
+  ];
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))", gap: 8, marginBottom: 10 }}>
+        {widgets.map(({ key, label, value, color, bg }) => {
+          const active = key === "all" ? activeStatus === "all" : activeStatus === key;
+          return (
+            <button key={key} onClick={() => onFilterStatus(key)}
+              className="jsa-card-hover"
+              style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", padding: "10px 12px", borderRadius: 8, background: active ? bg : T.panel, border: `1px solid ${active ? color : T.borderFaint}`, transition: "background 0.15s, border-color 0.15s" }}>
+              <div style={{ fontFamily: T.fontMono, fontSize: 22, fontWeight: 700, color, lineHeight: 1.1 }}>{value}</div>
+              <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, letterSpacing: "0.07em", marginTop: 3 }}>{label.toUpperCase()}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* GRAPHIC — pipeline distribution bar chart */}
+      {total > 0 && (
+        <div style={{ padding: "12px 14px", background: T.panel, border: `1px solid ${T.borderFaint}`, borderRadius: 8 }}>
+          <div style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", color: T.textMuted, marginBottom: 10 }}>PIPELINE DISTRIBUTION</div>
+          {PIPELINE_STATUSES.filter(s => counts[s.key] > 0).map(s => {
+            const value = counts[s.key];
+            const pct = Math.round((value / total) * 100);
+            const color = T[s.color];
+            return (
+              <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontFamily: T.fontSans, fontSize: 11, color: T.textMuted, width: 88, flexShrink: 0 }}>{s.label}</span>
+                <div style={{ flex: 1, height: 8, background: T.surface, borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.max(2, (value / maxCount) * 100)}%`, background: color, borderRadius: 4, transition: "width 0.4s ease" }} />
+                </div>
+                <span style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textSecondary, width: 60, textAlign: "right", flexShrink: 0 }}>{value} ({pct}%)</span>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -1426,6 +1523,8 @@ export default function JobSearchAgent() {
   // Filters
   const [savedFilter,  setSavedFilter]  = useState({ text: "", status: "all", pursuit: "all" });
   const [savedSort,    setSavedSort]    = useState("score"); // "score" | "newest" | "oldest"
+  const [savedPage,    setSavedPage]    = useState(1);
+  useEffect(() => { setSavedPage(1); }, [savedFilter.text, savedFilter.status, savedFilter.pursuit, savedSort]);
   const [showReport,   setShowReport]   = useState(false);
   const [reportCopied, setReportCopied] = useState("");
   const [checkingJobIds, setCheckingJobIds] = useState(new Set());
@@ -1479,6 +1578,8 @@ export default function JobSearchAgent() {
   const [inlineJdPaste,   setInlineJdPaste]   = useState({});
   const [inlineRescoring, setInlineRescoring] = useState({});
   const [inlineJdOpen,    setInlineJdOpen]    = useState({});
+  const savedListTopRef = useRef(null);
+  function goToSavedPage(p) { setSavedPage(p); savedListTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }
 
   // Tailor
   const [tailorMode,       setTailorMode]       = useState("paste");
@@ -2564,41 +2665,12 @@ async function doQuickScore(job) {
       {/* ════ PIPELINE ════ */}
       {tab === "saved" && (
         <>
-          {/* STATUS SUMMARY */}
-          {(() => {
-            const counts = {
-              new:          supabaseJobs.filter(j => j.status === "new").length,
-              reviewing:    supabaseJobs.filter(j => j.status === "reviewing").length,
-              applied:      supabaseJobs.filter(j => j.status === "applied").length,
-              interviewing: supabaseJobs.filter(j => j.status === "interviewing").length,
-              offer:        supabaseJobs.filter(j => j.status === "offer").length,
-              passed:       supabaseJobs.filter(j => j.status === "pass").length,
-              rejected:     supabaseJobs.filter(j => j.status === "rejected").length,
-              closed:       supabaseJobs.filter(j => j.status === "closed").length,
-            };
-            const total = supabaseJobs.length;
-            const stats = [
-              { label: "Total",        value: total,              color: T.textSecondary, bg: T.surface        },
-              { label: "New",          value: counts.new,         color: T.textMuted,     bg: "transparent"    },
-              { label: "Reviewing",    value: counts.reviewing,   color: T.blue,          bg: T.blueBg         },
-              { label: "Applied",      value: counts.applied,     color: T.green,         bg: T.greenBg        },
-              { label: "Interviewing", value: counts.interviewing, color: T.green,        bg: T.greenBg        },
-              { label: "Offer",        value: counts.offer,       color: T.green,         bg: T.greenBg        },
-              { label: "Passed",       value: counts.passed,      color: T.textMuted,     bg: T.surface        },
-              { label: "Rejected",     value: counts.rejected,    color: T.red,           bg: T.redBg          },
-              { label: "Closed",       value: counts.closed,      color: T.textMuted,     bg: T.surface        },
-            ].filter(s => s.value > 0 || s.label === "Total");
-            return (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, padding: "10px 12px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 8 }}>
-                {stats.map(({ label, value, color, bg }) => (
-                  <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "4px 12px", borderRadius: 5, background: bg, border: `1px solid ${T.borderFaint}`, minWidth: 52 }}>
-                    <span style={{ fontFamily: T.fontMono, fontSize: 15, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</span>
-                    <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, letterSpacing: "0.07em", marginTop: 2 }}>{label.toUpperCase()}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+          {/* PIPELINE DASHBOARD — clickable summary widgets + distribution graphic */}
+          <PipelineDashboard
+            jobs={supabaseJobs}
+            activeStatus={savedFilter.status}
+            onFilterStatus={status => setSavedFilter(f => ({ ...f, status }))}
+          />
 
           {/* HERO — top new scored job */}
           {(() => {
@@ -2629,17 +2701,24 @@ async function doQuickScore(job) {
 
           {/* FILTER BAR */}
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 12, padding: "8px 10px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 6 }}>
+            <input className="jsa-input" type="search" placeholder="Find by title, company, location…"
+              value={savedFilter.text} onChange={e => setSavedFilter(f => ({ ...f, text: e.target.value }))}
+              style={{ fontFamily: T.fontMono, fontSize: 11, background: T.panel, border: `1px solid ${T.border}`, color: T.textPrimary, borderRadius: 4, padding: "4px 9px", outline: "none", width: 200 }} />
+            {savedFilter.text && (
+              <button onClick={() => setSavedFilter(f => ({ ...f, text: "" }))} title="Clear search"
+                style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", padding: "3px 4px", marginLeft: -4 }}>✕</button>
+            )}
+            <div style={{ width: 1, height: 16, background: T.border, margin: "0 2px" }} />
             {[
               { label: "All", status: "all" }, { label: "New", status: "new" },
-              { label: "Reviewing", status: "reviewing" }, { label: "Applied", status: "applied" },
-              { label: "Interviewing", status: "interviewing" }, { label: "Closed", status: "closed" },
+              { label: "Reviewing", status: "reviewing" }, { label: "Closed", status: "closed" },
               { label: "Passed", status: "pass" },
             ].map(({ label, status }) => {
               const active = savedFilter.status === status;
               return <button key={status} onClick={() => setSavedFilter(f => ({ ...f, status }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.accentDim : T.border}`, background: active ? T.greenBg : "transparent", color: active ? T.green : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
             })}
             <div style={{ width: 1, height: 16, background: T.border, margin: "0 2px" }} />
-            {[{ label: "Priority", value: "PRIORITY" }, { label: "Strong", value: "STRONG" }, { label: "Unscored", value: "unscored" }, { label: "⚠ Low Conf", value: "low_confidence" }, { label: "🚫 Relocation", value: "relocation" }].map(({ label, value }) => {
+            {[{ label: "Unscored", value: "unscored" }, { label: "⚠ Low Conf", value: "low_confidence" }, { label: "🚫 Relocation", value: "relocation" }].map(({ label, value }) => {
               const active = savedFilter.pursuit === value;
               const isRed = value === "relocation";
               return <button key={value} onClick={() => setSavedFilter(f => ({ ...f, pursuit: active ? "all" : value }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active && isRed ? T.redBorder : T.border}`, background: active && isRed ? T.redBg : active ? T.surface : "transparent", color: active && isRed ? T.red : active ? T.textSecondary : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
@@ -2782,27 +2861,48 @@ async function doQuickScore(job) {
             </div>
           )}
 
-          {[...supabaseJobs].filter(j => !dismissedSaved.includes(j.id) && (j.status !== "pass" || savedFilter.status === "pass") && (j.status !== "closed" || savedFilter.status === "closed")).filter(j => {
-            const ej = enrichJob({ ...j, jd_text: j.description || "" });
-            if (savedFilter.status !== "all" && j.status !== savedFilter.status) return false;
-            if (savedFilter.pursuit !== "all") {
-              if (savedFilter.pursuit === "unscored") return j.score == null;
-              if (savedFilter.pursuit === "low_confidence") return isLowConfidence(j);
-              if (savedFilter.pursuit === "relocation") return ej._location_tier === "relocation";
-              if (ej._pursuit !== savedFilter.pursuit) return false;
-            }
-            return true;
-          }).map(j => enrichJob({ ...j, jd_text: j.description || "" })).sort((a, b) => {
-            if (savedSort === "newest" || savedSort === "oldest") {
-              const da = new Date(a.created_at || 0).getTime();
-              const db = new Date(b.created_at || 0).getTime();
-              return savedSort === "newest" ? db - da : da - db;
-            }
-            if (a.score == null && b.score == null) return 0;
-            if (a.score == null) return 1;
-            if (b.score == null) return -1;
-            return b.final_score - a.final_score;
-          }).map(job => (
+          {(() => {
+            const q = savedFilter.text.trim().toLowerCase();
+            const visibleJobs = [...supabaseJobs]
+              .filter(j => !dismissedSaved.includes(j.id) && (j.status !== "pass" || savedFilter.status === "pass") && (j.status !== "closed" || savedFilter.status === "closed"))
+              .filter(j => {
+                const ej = enrichJob({ ...j, jd_text: j.description || "" });
+                if (savedFilter.status !== "all" && j.status !== savedFilter.status) return false;
+                if (savedFilter.pursuit !== "all") {
+                  if (savedFilter.pursuit === "unscored") return j.score == null;
+                  if (savedFilter.pursuit === "low_confidence") return isLowConfidence(j);
+                  if (savedFilter.pursuit === "relocation") return ej._location_tier === "relocation";
+                  if (ej._pursuit !== savedFilter.pursuit) return false;
+                }
+                if (q && !j.title?.toLowerCase().includes(q) && !j.company?.toLowerCase().includes(q) && !j.location?.toLowerCase().includes(q)) return false;
+                return true;
+              })
+              .map(j => enrichJob({ ...j, jd_text: j.description || "" }))
+              .sort((a, b) => {
+                if (savedSort === "newest" || savedSort === "oldest") {
+                  const da = new Date(a.created_at || 0).getTime();
+                  const db = new Date(b.created_at || 0).getTime();
+                  return savedSort === "newest" ? db - da : da - db;
+                }
+                if (a.score == null && b.score == null) return 0;
+                if (a.score == null) return 1;
+                if (b.score == null) return -1;
+                return b.final_score - a.final_score;
+              });
+
+            const pageCount = Math.max(1, Math.ceil(visibleJobs.length / SAVED_PAGE_SIZE));
+            const page = Math.min(savedPage, pageCount);
+            const pageJobs = visibleJobs.slice((page - 1) * SAVED_PAGE_SIZE, page * SAVED_PAGE_SIZE);
+            const paginationProps = { page, pageCount, total: visibleJobs.length, pageSize: SAVED_PAGE_SIZE, onChange: goToSavedPage };
+
+            return (
+              <>
+                <div ref={savedListTopRef} />
+                <Pagination {...paginationProps} />
+                {visibleJobs.length === 0 && !supabaseLoading && supabaseJobs.length > 0 && (
+                  <div style={{ textAlign: "center", padding: "32px 0", fontFamily: T.fontMono, fontSize: 10, letterSpacing: "0.1em", color: T.textMuted }}>NO ROLES MATCH THESE FILTERS</div>
+                )}
+                {pageJobs.map(job => (
             <div key={job.id} className="jsa-card-hover" style={{ background: T.panel, border: `1px solid ${job.score == null ? T.amberBorder : T.borderFaint}`, borderRadius: 8, padding: "10px 12px", marginBottom: 6, transition: "background 0.15s, border-color 0.15s", opacity: job.score != null && job.final_score < 60 ? 0.45 : 1 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                 <div onClick={e => { e.stopPropagation(); setSelectedJobIds(prev => { const next = new Set(prev); next.has(job.id) ? next.delete(job.id) : next.add(job.id); return next; }); }}
@@ -2994,7 +3094,11 @@ async function doQuickScore(job) {
                 </div>
               </div>
             </div>
-          ))}
+                ))}
+                <Pagination {...paginationProps} />
+              </>
+            );
+          })()}
 
         </>
       )}
