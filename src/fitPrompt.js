@@ -59,6 +59,7 @@ Schema:
   "stated_variable": number | null,
   "comp_note": "what the posting actually said about money, or 'not stated'",
   "stated_experience_years": { "min": number | null, "max": number | null },
+  "excludes_execution_scope": boolean,
   "location_posture": one of the enum values below, OR an array of them when the
                       posting offers a choice of sites,
   "on_call": boolean,
@@ -139,10 +140,11 @@ senior-product-leader vocabulary is NOT a match — leave the array empty in tha
 ── KNOWN GAP KEYS ──
 Emit only when the JD actually asks for it. "required" if listed as a requirement,
 "preferred" if a nice-to-have.
-  "gpu_infra"      — GPU infrastructure
-  "microvm"        — MicroVM / Firecracker
-  "mlflow"         — direct MLflow ownership / ML training platforms
-  "vendor_fluency" — deep single-vendor internal product knowledge an internal hire would have
+  "gpu_infra"         — GPU infrastructure
+  "microvm"           — MicroVM / Firecracker
+  "mlflow"            — direct MLflow ownership / ML training platforms
+  "vendor_fluency"    — deep single-vendor internal product knowledge an internal hire would have
+  "corp_strategy_mna" — M&A / corporate development / build-buy-partner strategy ownership
 
 Kubernetes, Helm and operators are NOT a gap — see PLATFORM ENGINEERING FLUENCY in the
 candidate profile. A Kubernetes requirement is met; emit "k8s_platform" as a proof point
@@ -181,6 +183,15 @@ from the title or seniority language.
     seniority word ("Senior Director", "Staff", "Principal", "L8") with NO accompanying
     number is NOT a stated_experience_years signal — leave both null and let title_band
     carry that instead. This field is for literal digits only.
+
+── EXCLUDES EXECUTION SCOPE ──
+true ONLY when the JD explicitly states this role is NOT roadmap, backlog, or feature-
+execution ownership — e.g. "rather than managing sprint backlogs, feature prioritization,
+or short-term execution roadmaps..." Read this literally off the page, the same way you
+read stated_experience_years. Do not infer it from seniority, title, or the presence of
+"strategy" in the title alone — plenty of target-band roles are strategic AND own execution.
+This is specifically for postings that draw the contrast explicitly and put the role on the
+non-execution side of it. false in every other case, including when you are unsure.
 
 ── LOCATION POSTURE ──
 "remote"            — genuinely remote
@@ -229,6 +240,7 @@ export function extractionToSignals(x, { company, jd }) {
     onCall: !!x?.on_call,
     travelHeavy: !!x?.travel_heavy,
     knownGaps: Array.isArray(x?.known_gaps) ? x.known_gaps : [],
+    excludesExecutionScope: !!x?.excludes_execution_scope,
     jdChars: (jd || "").trim().length,
   };
 }
