@@ -861,10 +861,77 @@ const PIPELINE_STATUSES = [
   { key: "closed",       label: "Closed",       color: "textMuted" },
 ];
 
-function PipelineDashboard({ jobs, activeStatus, onFilterStatus }) {
+// Distinct per-segment palette for the doughnut chart — adjacent ring slices
+// need their own hue to stay legible (unlike the tiles above, where each
+// value already sits beside its own text label). Colorblind-validated 8-hue
+// categorical set, one hex per PIPELINE_STATUSES entry in order.
+const CHART_PALETTE_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+const CHART_PALETTE_DARK  = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+
+/** SVG ring chart: click a segment or legend row to filter, same as the tiles above. */
+function DoughnutChart({ segments, total, activeKey, onSelect }) {
+  const [hoverKey, setHoverKey] = useState(null);
+  const size = 148, thickness = 24;
+  const r = (size - thickness) / 2;
+  const cx = size / 2, cy = size / 2;
+  const circumference = 2 * Math.PI * r;
+  const gap = circumference * 0.01;
+  const arcs = segments.reduce((acc, s) => {
+    const len = (s.value / total) * circumference;
+    acc.list.push({ ...s, dash: Math.max(0, len - gap), dashOffset: -acc.cursor });
+    acc.cursor += len;
+    return acc;
+  }, { list: [], cursor: 0 }).list;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+      <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={T.borderFaint} strokeWidth={thickness} />
+          {arcs.map(s => {
+            const dimmed = activeKey !== "all" && activeKey !== s.key;
+            const raised = hoverKey === s.key || activeKey === s.key;
+            return (
+              <circle key={s.key} cx={cx} cy={cy} r={r} fill="none"
+                stroke={s.chartColor} strokeWidth={raised ? thickness + 5 : thickness}
+                strokeDasharray={`${s.dash} ${circumference - s.dash}`}
+                strokeDashoffset={s.dashOffset} strokeLinecap="butt"
+                onClick={() => onSelect(s.key)}
+                onMouseEnter={() => setHoverKey(s.key)} onMouseLeave={() => setHoverKey(null)}
+                style={{ cursor: "pointer", opacity: dimmed ? 0.35 : 1, transition: "stroke-width 0.12s, opacity 0.12s" }}>
+                <title>{`${s.label}: ${s.value} (${Math.round((s.value / total) * 100)}%)`}</title>
+              </circle>
+            );
+          })}
+        </svg>
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <span style={{ fontFamily: T.fontMono, fontSize: 26, fontWeight: 700, color: T.textPrimary, lineHeight: 1 }}>{total}</span>
+          <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, letterSpacing: "0.08em", marginTop: 2 }}>TOTAL</span>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 160 }}>
+        {segments.map(s => {
+          const active = activeKey === s.key;
+          const pct = Math.round((s.value / total) * 100);
+          return (
+            <button key={s.key} onClick={() => onSelect(s.key)}
+              onMouseEnter={() => setHoverKey(s.key)} onMouseLeave={() => setHoverKey(null)}
+              style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit", textAlign: "left", cursor: "pointer", border: "none", background: active ? T.surface : "transparent", borderRadius: 5, padding: "4px 6px" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: s.chartColor, flexShrink: 0 }} />
+              <span style={{ fontFamily: T.fontSans, fontSize: 11, color: active ? T.textPrimary : T.textSecondary, fontWeight: active ? 600 : 400, flex: 1 }}>{s.label}</span>
+              <span style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted }}>{s.value} ({pct}%)</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PipelineDashboard({ jobs, activeStatus, onFilterStatus, dark }) {
   const total = jobs.length;
   const counts = Object.fromEntries(PIPELINE_STATUSES.map(({ key }) => [key, jobs.filter(j => j.status === key).length]));
-  const maxCount = Math.max(1, ...PIPELINE_STATUSES.map(s => counts[s.key]));
+  const palette = dark ? CHART_PALETTE_DARK : CHART_PALETTE_LIGHT;
 
   const widgets = [
     { key: "all", label: "Total", value: total, color: T.textSecondary, bg: T.panel },
@@ -887,26 +954,18 @@ function PipelineDashboard({ jobs, activeStatus, onFilterStatus }) {
         })}
       </div>
 
-      {/* GRAPHIC — pipeline distribution bar chart */}
-      {total > 0 && (
-        <div style={{ padding: "12px 14px", background: T.panel, border: `1px solid ${T.borderFaint}`, borderRadius: 8 }}>
-          <div style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", color: T.textMuted, marginBottom: 10 }}>PIPELINE DISTRIBUTION</div>
-          {PIPELINE_STATUSES.filter(s => counts[s.key] > 0).map(s => {
-            const value = counts[s.key];
-            const pct = Math.round((value / total) * 100);
-            const color = T[s.color];
-            return (
-              <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <span style={{ fontFamily: T.fontSans, fontSize: 11, color: T.textMuted, width: 88, flexShrink: 0 }}>{s.label}</span>
-                <div style={{ flex: 1, height: 8, background: T.surface, borderRadius: 4, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.max(2, (value / maxCount) * 100)}%`, background: color, borderRadius: 4, transition: "width 0.4s ease" }} />
-                </div>
-                <span style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textSecondary, width: 60, textAlign: "right", flexShrink: 0 }}>{value} ({pct}%)</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* GRAPHIC — pipeline distribution doughnut */}
+      {total > 0 && (() => {
+        const segments = PIPELINE_STATUSES
+          .map((s, i) => ({ ...s, value: counts[s.key], chartColor: palette[i] }))
+          .filter(s => s.value > 0);
+        return (
+          <div style={{ padding: "14px 16px", background: T.panel, border: `1px solid ${T.borderFaint}`, borderRadius: 8 }}>
+            <div style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", color: T.textMuted, marginBottom: 12 }}>PIPELINE DISTRIBUTION</div>
+            <DoughnutChart segments={segments} total={total} activeKey={activeStatus} onSelect={onFilterStatus} />
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1221,9 +1280,11 @@ function ScoreBreakdown({ job }) {
 
 function StatusButtons({ jobId, currentStatus, onStatusChange }) {
   const OPTIONS = [
-    { label: "Applied",  value: "applied",  color: T.green, bg: T.greenBg, border: T.greenBorder },
-    { label: "Rejected", value: "rejected", color: T.red,   bg: T.redBg,   border: T.redBorder   },
-    { label: "Closed",   value: "closed",   color: T.textMuted, bg: T.surface, border: T.border  },
+    { label: "Applied",      value: "applied",      color: T.green, bg: T.greenBg, border: T.greenBorder },
+    { label: "Interviewing", value: "interviewing", color: T.blue,  bg: T.blueBg,  border: T.blueBorder  },
+    { label: "Offer",        value: "offer",        color: T.amber, bg: T.amberBg, border: T.amberBorder },
+    { label: "Rejected",     value: "rejected",     color: T.red,   bg: T.redBg,   border: T.redBorder   },
+    { label: "Closed",       value: "closed",       color: T.textMuted, bg: T.surface, border: T.border  },
   ];
   return (
     <div style={{ display: "flex", gap: 5, marginTop: 10, flexWrap: "wrap" }}>
@@ -2669,7 +2730,8 @@ async function doQuickScore(job) {
           <PipelineDashboard
             jobs={supabaseJobs}
             activeStatus={savedFilter.status}
-            onFilterStatus={status => setSavedFilter(f => ({ ...f, status }))}
+            dark={theme === "dark"}
+            onFilterStatus={status => setSavedFilter(f => ({ ...f, status, pursuit: "all" }))}
           />
 
           {/* HERO — top new scored job */}
@@ -2711,17 +2773,15 @@ async function doQuickScore(job) {
             <div style={{ width: 1, height: 16, background: T.border, margin: "0 2px" }} />
             {[
               { label: "All", status: "all" }, { label: "New", status: "new" },
-              { label: "Reviewing", status: "reviewing" }, { label: "Closed", status: "closed" },
-              { label: "Passed", status: "pass" },
+              { label: "Reviewing", status: "reviewing" },
             ].map(({ label, status }) => {
               const active = savedFilter.status === status;
               return <button key={status} onClick={() => setSavedFilter(f => ({ ...f, status }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.accentDim : T.border}`, background: active ? T.greenBg : "transparent", color: active ? T.green : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
             })}
             <div style={{ width: 1, height: 16, background: T.border, margin: "0 2px" }} />
-            {[{ label: "Unscored", value: "unscored" }, { label: "⚠ Low Conf", value: "low_confidence" }, { label: "🚫 Relocation", value: "relocation" }].map(({ label, value }) => {
+            {[{ label: "Unscored", value: "unscored" }, { label: "⚠ Low Conf", value: "low_confidence" }].map(({ label, value }) => {
               const active = savedFilter.pursuit === value;
-              const isRed = value === "relocation";
-              return <button key={value} onClick={() => setSavedFilter(f => ({ ...f, pursuit: active ? "all" : value }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active && isRed ? T.redBorder : T.border}`, background: active && isRed ? T.redBg : active ? T.surface : "transparent", color: active && isRed ? T.red : active ? T.textSecondary : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
+              return <button key={value} onClick={() => setSavedFilter(f => ({ ...f, pursuit: active ? "all" : value }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.accentDim : T.border}`, background: active ? T.surface : "transparent", color: active ? T.textSecondary : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
             })}
             <div style={{ width: 1, height: 16, background: T.border, margin: "0 2px" }} />
             {[{ label: "Score ↓", value: "score" }, { label: "Newest", value: "newest" }, { label: "Oldest", value: "oldest" }].map(({ label, value }) => {
@@ -2871,7 +2931,6 @@ async function doQuickScore(job) {
                 if (savedFilter.pursuit !== "all") {
                   if (savedFilter.pursuit === "unscored") return j.score == null;
                   if (savedFilter.pursuit === "low_confidence") return isLowConfidence(j);
-                  if (savedFilter.pursuit === "relocation") return ej._location_tier === "relocation";
                   if (ej._pursuit !== savedFilter.pursuit) return false;
                 }
                 if (q && !j.title?.toLowerCase().includes(q) && !j.company?.toLowerCase().includes(q) && !j.location?.toLowerCase().includes(q)) return false;
