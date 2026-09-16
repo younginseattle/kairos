@@ -94,6 +94,19 @@ check("a billing JD that ALREADY cites usage_metering is not stale",
     ...current.fit_detail.extraction,
     non_interchangeable_matches: [{ proof: "usage_metering", strength: "direct" }] } } }) === null);
 
+console.log("\nexcludes_execution_scope — added after the Salesforce Sr. Director, Technical Product Strategy case");
+const executionExclusionJd = { ...current,
+  description: "This role is strategic — rather than managing sprint backlogs, feature "
+    + "prioritization, or short-term execution roadmaps, you will shape multi-year build-buy-partner strategy." };
+check("a JD drawing the execution-exclusion contrast, extracted before the field existed, is stale",
+  /excludes_execution_scope/.test(staleReason(executionExclusionJd) || ""),
+  staleReason(executionExclusionJd) || "not stale");
+check("the same JD is NOT stale once the field was explicitly set (even to false)",
+  staleReason({ ...executionExclusionJd, fit_detail: { extraction: {
+    ...current.fit_detail.extraction, excludes_execution_scope: false } } }) === null);
+check("a plain execution-owning JD does not trip this check",
+  staleReason(current) === null);
+
 console.log("\nNo false positives on unrelated wording");
 check("a plain observability JD does not trip the new topics",
   staleReason(current) === null);

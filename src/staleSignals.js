@@ -29,6 +29,16 @@ export const NEW_PROOF_TOPICS = {
   k8s_platform:      /\b(kubernetes|k8s\b|helm\b|operator pattern)\b/i,
 };
 
+/**
+ * Language explicitly contrasting a role against roadmap/backlog/feature-execution
+ * ownership — the exact wording excludes_execution_scope exists to catch (the
+ * Salesforce Sr. Director, Technical Product Strategy case). A row extracted
+ * before this field existed has it entirely absent, not `false` — a current
+ * extraction always sets it explicitly, so `undefined` is the tell.
+ */
+export const EXECUTION_EXCLUSION_LANGUAGE =
+  /\b(rather than|instead of|not)\b[^.]{0,100}\b(sprint backlog|feature prioriti[sz]ation|execution roadmap|short-term execution|feature execution|roadmap ownership|day-to-day execution)\b/i;
+
 /** Postures a multi-site posting could have been flattened into. */
 export const FLATTENABLE_POSTURES = new Set(["hybrid_remote", "office_relocation"]);
 
@@ -82,6 +92,14 @@ export function staleReason(job) {
     .filter(([key, re]) => PROOF_POINTS[key] && !cited.has(key) && re.test(jd))
     .map(([key]) => key);
   if (uncredited.length) return `JD covers uncredited proof key(s): ${uncredited.join(", ")}`;
+
+  // excludes_execution_scope did not exist at extraction time — the key is
+  // absent entirely, not `false`. If the JD reads like it draws exactly the
+  // contrast this field exists to catch, the old extraction could not have
+  // recorded it either way.
+  if (x.excludes_execution_scope === undefined && EXECUTION_EXCLUSION_LANGUAGE.test(jd)) {
+    return "JD may explicitly exclude execution/roadmap ownership — extracted before excludes_execution_scope existed";
+  }
 
   return null;
 }

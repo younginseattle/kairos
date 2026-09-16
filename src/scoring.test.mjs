@@ -610,6 +610,29 @@ check("manual comp override raises the score above the unverified case",
   overridden.score > results.elastic.score,
   `${overridden.score} vs ${results.elastic.score}`);
 
+// ── Execution-scope exclusion gate ────────────────────────────────
+// Salesforce Sr. Director, Technical Product Strategy: domain and level both
+// keyword-match into the 85+ range because the role is ABOUT his technology
+// areas, but the JD explicitly disclaims roadmap/backlog/execution ownership.
+// Since both axes read strong, the two-stretch multiplier never engages —
+// this can only be caught by a gate, not by the weighted mean.
+console.log("\n" + "=".repeat(76));
+console.log("EXECUTION-SCOPE EXCLUSION GATE");
+
+const pureStrategyRole = computeFit({ ...CASES.bmc.signals, excludesExecutionScope: true });
+check("excludes_execution_scope gates a role that otherwise scores apply-now",
+  pureStrategyRole.score <= 52, `scored ${pureStrategyRole.score}`);
+check("...and the gate is what does it",
+  pureStrategyRole.gates.some(g => g.reason.includes("excludes execution/roadmap ownership")),
+  JSON.stringify(pureStrategyRole.gates));
+check("a role that owns execution is unaffected (flag defaults false)",
+  !results.bmc.gates.some(g => g.reason.includes("excludes execution/roadmap ownership")));
+
+const corpStrategyGap = computeFit({ ...CASES.bmc.signals,
+  knownGaps: [{ gap: "corp_strategy_mna", level: "required" }] });
+check("corp_strategy_mna is a recognised gap key and deducts",
+  corpStrategyGap.math.gap_penalty > 0, `penalty ${corpStrategyGap.math.gap_penalty}`);
+
 // Every score ships with its reasoning.
 for (const [k, r] of Object.entries(results)) {
   check(`${k} emits a per-dimension explanation for every scored dimension`,

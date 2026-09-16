@@ -400,6 +400,9 @@ export const KNOWN_GAPS = {
   microvm:          { label: "MicroVM / Firecracker",                   required: 8, preferred: 3 },
   mlflow:           { label: "Direct MLflow ownership / ML training",   required: 7, preferred: 3 },
   vendor_fluency:   { label: "Deep single-vendor internal fluency",     required: 6, preferred: 2 },
+  // Added after the Salesforce Sr. Director, Technical Product Strategy diagnosis:
+  // a required qualification with zero track record and no existing key to catch it.
+  corp_strategy_mna: { label: "M&A / corporate development / build-buy-partner strategy", required: 8, preferred: 3 },
   // k8s_operators removed — Kubernetes, Helm authorship and operator
   // patterns are working knowledge, not a gap. It is now a proof point
   // (k8s_platform) instead. Rows stored before this change still carry the
@@ -484,9 +487,19 @@ export function scoreExperienceGate({ statedYearsMin = null, statedYearsMax = nu
 // GATES — ceilings, not nudges
 // ─────────────────────────────────────────────────────────────────
 
-export function computeGates({ compResult, locationPosture, titleBand, companyFacts, compStated, experienceGate = null }) {
+export function computeGates({ compResult, locationPosture, titleBand, companyFacts, compStated, experienceGate = null, excludesExecutionScope = false }) {
   const gates = [];
   if (experienceGate) gates.push(experienceGate);
+  // Domain and level are both keyword/title driven and can both read >85 on a
+  // pure-strategy role that happens to be ABOUT his technology areas rather than
+  // asking him to build/operate them (the Salesforce Sr. Director, Technical
+  // Product Strategy case). When that happens the two-stretch multiplier never
+  // engages, because it only fires when both axes are already below 85. This is
+  // a structural fact about what the job IS — read literally off the JD the same
+  // way stated_experience_years is — so it gates rather than joining the mean.
+  if (excludesExecutionScope) {
+    gates.push({ reason: "JD explicitly excludes execution/roadmap ownership — pure strategy function with no track record match", ceiling: 52 });
+  }
   if (compResult?.tc != null && !compResult.estimated && compResult.tc < 300) {
     gates.push({ reason: "stated comp below $300K", ceiling: 55 });
   }
@@ -644,6 +657,7 @@ export function computeFit(signals) {
     burdenOverride = null,   // manual override
     statedYearsMin = null, statedYearsMax = null,  // explicit numeric YOE requirement, if the JD states one
     candidateYears = CANDIDATE_YEARS,
+    excludesExecutionScope = false,  // literal: JD explicitly disclaims execution/roadmap ownership
   } = signals;
 
   const facts = getCompanyFacts(company);
@@ -681,7 +695,7 @@ export function computeFit(signals) {
   const afterStretch = afterGaps * multiplier;
 
   const experienceGate = scoreExperienceGate({ statedYearsMin, statedYearsMax, candidateYears });
-  const gates = computeGates({ compResult: c, locationPosture, titleBand, companyFacts: facts, compStated, experienceGate });
+  const gates = computeGates({ compResult: c, locationPosture, titleBand, companyFacts: facts, compStated, experienceGate, excludesExecutionScope });
   const ceiling = gates.length ? Math.min(...gates.map(g => g.ceiling)) : 100;
 
   // Gates cap, but must not FLATTEN. A hard `min(raw, ceiling)` collapsed every
