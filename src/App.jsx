@@ -860,6 +860,12 @@ const PIPELINE_STATUSES = [
   { key: "rejected",     label: "Rejected",     color: "red"       },
   { key: "closed",       label: "Closed",       color: "textMuted" },
 ];
+const KNOWN_STATUS_KEYS = new Set(PIPELINE_STATUSES.map(s => s.key));
+/** Any row whose status isn't one of the values above — e.g. a legacy or
+ *  hand-written value, or a null/blank status. Without this bucket those
+ *  rows counted toward Total but never appeared as their own slice, so the
+ *  chart silently under-represented the pipeline. */
+const isOtherStatus = (status) => !KNOWN_STATUS_KEYS.has(status);
 
 // Distinct per-segment palette for the doughnut chart — adjacent ring slices
 // need their own hue to stay legible (unlike the tiles above, where each
@@ -875,10 +881,16 @@ function DoughnutChart({ segments, total, activeKey, onSelect }) {
   const r = (size - thickness) / 2;
   const cx = size / 2, cy = size / 2;
   const circumference = 2 * Math.PI * r;
-  const gap = circumference * 0.01;
+  const maxGap = circumference * 0.01;
   const arcs = segments.reduce((acc, s) => {
     const len = (s.value / total) * circumference;
-    acc.list.push({ ...s, dash: Math.max(0, len - gap), dashOffset: -acc.cursor });
+    // Cap the gap at half the segment's own length so a real, nonzero-count
+    // status can never be clamped down to an invisible sliver — a fixed gap
+    // that's fine for a big segment can otherwise exceed a small one's
+    // entire length, silently dropping it off the ring (it would still show
+    // in the legend, since that isn't gap-limited, but the two would disagree).
+    const segGap = Math.min(maxGap, len / 2);
+    acc.list.push({ ...s, dash: Math.max(0, len - segGap), dashOffset: -acc.cursor });
     acc.cursor += len;
     return acc;
   }, { list: [], cursor: 0 }).list;
@@ -931,11 +943,13 @@ function DoughnutChart({ segments, total, activeKey, onSelect }) {
 function PipelineDashboard({ jobs, activeStatus, onFilterStatus, dark }) {
   const total = jobs.length;
   const counts = Object.fromEntries(PIPELINE_STATUSES.map(({ key }) => [key, jobs.filter(j => j.status === key).length]));
+  const otherCount = jobs.filter(j => isOtherStatus(j.status)).length;
   const palette = dark ? CHART_PALETTE_DARK : CHART_PALETTE_LIGHT;
 
   const widgets = [
     { key: "all", label: "Total", value: total, color: T.textSecondary, bg: T.panel },
     ...PIPELINE_STATUSES.map(s => ({ key: s.key, label: s.label, value: counts[s.key], color: T[s.color], bg: s.color === "textMuted" ? T.panel : T[`${s.color}Bg`] })),
+    ...(otherCount > 0 ? [{ key: "other", label: "Other", value: otherCount, color: T.amber, bg: T.amberBg }] : []),
   ];
 
   return (
@@ -958,7 +972,8 @@ function PipelineDashboard({ jobs, activeStatus, onFilterStatus, dark }) {
       {total > 0 && (() => {
         const segments = PIPELINE_STATUSES
           .map((s, i) => ({ ...s, value: counts[s.key], chartColor: palette[i] }))
-          .filter(s => s.value > 0);
+          .filter(s => s.value > 0)
+          .concat(otherCount > 0 ? [{ key: "other", label: "Other", value: otherCount, chartColor: T.textMuted }] : []);
         return (
           <div style={{ padding: "14px 16px", background: T.panel, border: `1px solid ${T.borderFaint}`, borderRadius: 8 }}>
             <div style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", color: T.textMuted, marginBottom: 12 }}>PIPELINE DISTRIBUTION</div>
@@ -2927,7 +2942,8 @@ async function doQuickScore(job) {
               .filter(j => !dismissedSaved.includes(j.id) && (j.status !== "pass" || savedFilter.status === "pass") && (j.status !== "closed" || savedFilter.status === "closed"))
               .filter(j => {
                 const ej = enrichJob({ ...j, jd_text: j.description || "" });
-                if (savedFilter.status !== "all" && j.status !== savedFilter.status) return false;
+                if (savedFilter.status === "other") { if (!isOtherStatus(j.status)) return false; }
+                else if (savedFilter.status !== "all" && j.status !== savedFilter.status) return false;
                 if (savedFilter.pursuit !== "all") {
                   if (savedFilter.pursuit === "unscored") return j.score == null;
                   if (savedFilter.pursuit === "low_confidence") return isLowConfidence(j);
