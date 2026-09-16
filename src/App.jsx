@@ -871,8 +871,18 @@ const isOtherStatus = (status) => !KNOWN_STATUS_KEYS.has(status);
 // need their own hue to stay legible (unlike the tiles above, where each
 // value already sits beside its own text label). Colorblind-validated 8-hue
 // categorical set, one hex per PIPELINE_STATUSES entry in order.
-const CHART_PALETTE_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-const CHART_PALETTE_DARK  = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+//
+// No two slots read as "green" — the original set (a teal-leaning "aqua" at
+// Applied plus a true "green" at Passed) put two green-family hues in the
+// same small ring, which is exactly what made them hard to tell apart at a
+// glance. Applied now gets a deep sky-blue and Passed a warm amber-brown,
+// re-validated with scripts/validate_palette.js in both light and dark
+// against this app's own panel surface (#f0f2f5 / #1a1c21) — all hard gates
+// pass; the light-mode sub-3:1 contrast on orange/yellow/magenta is the same
+// documented WARN the original set carried, mitigated by the direct value
+// labels on every row below rather than color alone.
+const CHART_PALETTE_LIGHT = ["#2a78d6", "#eb6834", "#0d6ba8", "#eda100", "#e87ba4", "#9a5b0a", "#4a3aa7", "#e34948"];
+const CHART_PALETTE_DARK  = ["#3987e5", "#d95926", "#3d97d4", "#c98500", "#d55181", "#b8791f", "#9085e9", "#e66767"];
 
 /** SVG ring chart: click a segment or legend row to filter, same as the tiles above. */
 function DoughnutChart({ segments, total, activeKey, onSelect }) {
@@ -921,17 +931,26 @@ function DoughnutChart({ segments, total, activeKey, onSelect }) {
           <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, letterSpacing: "0.08em", marginTop: 2 }}>TOTAL</span>
         </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 160 }}>
-        {segments.map(s => {
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 220 }}>
+        {/* Sorted largest-first so the eye reads it as a ranked list, not the
+            ring's arbitrary status order. Each row carries its own bar with a
+            floor on visible width — the ring's arc length is proportional and
+            can shrink a small-but-real count to sub-pixel, but a labelled row
+            never can, so this is where a 1-2 job category stays legible. */}
+        {[...segments].sort((a, b) => b.value - a.value).map(s => {
           const active = activeKey === s.key;
-          const pct = Math.round((s.value / total) * 100);
+          const pct = (s.value / total) * 100;
+          const barPct = Math.max(4, pct);
           return (
             <button key={s.key} onClick={() => onSelect(s.key)}
               onMouseEnter={() => setHoverKey(s.key)} onMouseLeave={() => setHoverKey(null)}
               style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit", textAlign: "left", cursor: "pointer", border: "none", background: active ? T.surface : "transparent", borderRadius: 5, padding: "4px 6px" }}>
-              <span style={{ width: 10, height: 10, borderRadius: 3, background: s.chartColor, flexShrink: 0 }} />
-              <span style={{ fontFamily: T.fontSans, fontSize: 11, color: active ? T.textPrimary : T.textSecondary, fontWeight: active ? 600 : 400, flex: 1 }}>{s.label}</span>
-              <span style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted }}>{s.value} ({pct}%)</span>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: s.chartColor, flexShrink: 0 }} />
+              <span style={{ fontFamily: T.fontSans, fontSize: 11, color: active ? T.textPrimary : T.textSecondary, fontWeight: active ? 600 : 400, width: 86, flexShrink: 0 }}>{s.label}</span>
+              <div style={{ flex: 1, height: 6, background: T.surface, borderRadius: 3, overflow: "hidden", minWidth: 30 }}>
+                <div style={{ height: "100%", width: `${barPct}%`, background: s.chartColor, borderRadius: 3 }} />
+              </div>
+              <span style={{ fontFamily: T.fontMono, fontSize: 10, color: T.textMuted, width: 64, textAlign: "right", flexShrink: 0 }}>{s.value} ({Math.round(pct)}%)</span>
             </button>
           );
         })}
@@ -2919,16 +2938,6 @@ async function doQuickScore(job) {
           {supabaseError && <ErrBox msg={supabaseError} />}
           {!supabaseLoading && supabaseJobs.length === 0 && !supabaseError && <div style={{ textAlign: "center", padding: "48px 0", fontFamily: T.fontMono, fontSize: 10, letterSpacing: "0.1em", color: T.textMuted }}>NO ROLES IN PIPELINE YET</div>}
           {dismissedSaved.length > 0 && <button onClick={doRestoreDismissed} style={{ marginBottom: 4, fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>show {dismissedSaved.length} hidden</button>}
-          {supabaseJobs.filter(j => j.status === "pass").length > 0 && savedFilter.status !== "pass" && (
-            <div style={{ marginBottom: 8, fontFamily: T.fontMono, fontSize: 9, color: T.textMuted }}>
-              {supabaseJobs.filter(j => j.status === "pass").length} passed · <button onClick={() => setSavedFilter(f => ({ ...f, status: "pass" }))} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>view</button> · <button onClick={() => supabaseJobs.filter(j => j.status === "pass").forEach(j => handleStatusChange(j.id, "new"))} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>restore all</button>
-            </div>
-          )}
-          {supabaseJobs.filter(j => j.status === "closed").length > 0 && savedFilter.status !== "closed" && (
-            <div style={{ marginBottom: 8, fontFamily: T.fontMono, fontSize: 9, color: T.textMuted }}>
-              {supabaseJobs.filter(j => j.status === "closed").length} closed · <button onClick={() => setSavedFilter(f => ({ ...f, status: "closed" }))} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>view</button> · <button onClick={() => supabaseJobs.filter(j => j.status === "closed").forEach(j => handleStatusChange(j.id, "new"))} style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}>restore all</button>
-            </div>
-          )}
           {checkSummary && (
             <div style={{ marginBottom: 10, padding: "8px 12px", background: T.surface, border: `1px solid ${T.borderFaint}`, borderRadius: 6, fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>🔍 Checked {checkSummary.checked} job{checkSummary.checked !== 1 ? "s" : ""}{checkSummary.closed > 0 ? ` · ${checkSummary.closed} closed` : " · all open"}{checkSummary.skipped > 0 ? ` · ${checkSummary.skipped} LinkedIn (manual check)` : ""}{checkSummary.inconclusive > 0 ? ` · ${checkSummary.inconclusive} unreachable (left as-is)` : ""}</span>
