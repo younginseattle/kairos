@@ -99,6 +99,12 @@ const FACTS = {
   "ibm":         { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "mid" },
   "salesforce":  { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" },
   "domotz":      { tier: "small",       ownership: "startup", equity: "illiquid", vpBackground: "asset",    remote: "remote_first", tcBand: "below" },
+  // Estimates from public information (market cap, comp reporting, RTO policy),
+  // not verified like the calibration-set rows above — correct if wrong.
+  "servicenow":  { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" },
+  "meta":        { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "neutral",  remote: "office",       tcBand: "top" },
+  // Amazon Development Center is an Amazon legal-entity name that shows up as
+  // the `company` field on some Amazon postings — same company, same facts.
 
   // ── Companies onboarded 2026-08-06 with the SOURCES expansion ──
   // Every board added in that pass was absent here, so each of their roles
@@ -168,6 +174,9 @@ const ALIASES = {
   "gleanwork": "glean",
   "chronospherejobs": "chronosphere",
   "puppet labs": "puppet", "perforce": "puppet",
+  "service now": "servicenow", "servicenow inc": "servicenow",
+  "meta platforms": "meta", "facebook": "meta",
+  "amazon development center": "amazon", "amazon development center us": "amazon",
   // ATS board tokens and display names for the 2026-08-06 SOURCES expansion.
   // The `company` column is whatever the board reports — usually the token —
   // so these must map or the facts row is never found.
