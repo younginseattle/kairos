@@ -94,7 +94,13 @@ which pipeline saw it.
 Rules:
 - Lead-level titles (Director / VP / Head / Group / Principal / Staff) are in scope on level alone
 - Senior / Sr titles are in scope **only** with platform-infra-observability-AI-dev scope in the title, or when the source sets `broadFilter`
-- A bare "Product Manager" with no seniority modifier is never in scope
+- A bare "Product Manager" or "Technical Product Manager" with no seniority modifier is in scope
+  under the same gate as Senior/Sr — platform scope in the title, or `broadFilter` — added
+  2026-09-21 after NVIDIA ("Technical Product Manager - AI Infra Resilience") and Meta ("Product
+  Manager, Agent Transformation Accelerator") were silently dropped for lacking a level word, even
+  though both name the domain this pipeline exists to find. Associate/Assistant/Junior and numbered
+  "Product Manager I/II" titles are excluded explicitly (new entries in `EXCLUSION_PATTERNS`) so
+  this doesn't reopen the door to noise.
 - `developer` is deliberately not an exclusion keyword — "Director of Product, Developer Platform" is a target role
 - Platform scope includes observability-specific product-surface words (APM, tracing, logs,
   metrics, alerting, incidents, uptime, dashboards, latency) and ITOM/AIOps/network-operations

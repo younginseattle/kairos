@@ -13,8 +13,16 @@
  * caught from an email alert and dropped from the company's own board.
  * This module is the merge of the two.
  *
- * Deliberately NOT matched: a bare "Product Manager" with no seniority
- * modifier. That is an IC-entry title and is noise at this level.
+ * "Product Manager" and "Technical Product Manager" with no seniority
+ * modifier are treated the same as "Senior"/"Sr" below — in scope only
+ * with platform/infra/AI scope in the title. Added 2026-09-21 after two
+ * LinkedIn-alert roles (NVIDIA "Technical Product Manager - AI Infra
+ * Resilience", Meta "Product Manager, Agent Transformation Accelerator")
+ * were silently dropped for lacking a level word, even though both name
+ * exactly the domain this pipeline exists to find — some companies'
+ * leveling just doesn't put a seniority word in the title. Genuinely
+ * junior variants (Associate/Assistant/Junior, "Product Manager I/II")
+ * are excluded explicitly below so this doesn't reopen the door to noise.
  * ═══════════════════════════════════════════════════════════════
  */
 
@@ -40,11 +48,21 @@ export const LEAD_LEVEL_PATTERNS = [
  * PM on an observability platform is a real fit; a Senior PM on billing
  * or growth is not, and matching those unconditionally floods the
  * pipeline with roles that score in the 40s.
+ *
+ * Also covers a bare "Product Manager" / "Technical Product Manager" with
+ * NO seniority word at all — some companies' leveling doesn't put one in
+ * the title even for a senior-scoped role (NVIDIA "Technical Product
+ * Manager - AI Infra Resilience", Meta "Product Manager, Agent
+ * Transformation Accelerator"). Same gate applies: platform scope or
+ * broad-filter source required, or it's noise. JUNIOR_LEVEL_PATTERNS below
+ * excludes Associate/Assistant/Junior and numbered PM I/II titles before
+ * this ever runs, so those stay out regardless of scope.
  */
 export const SENIOR_LEVEL_PATTERNS = [
   /\bsenior\b.{0,30}\bproducts?\b/i,
   /\bsr\.?\b.{0,30}\bproducts?\b/i,
   /\blead\b.{0,20}\bproducts?\s+manager/i,
+  /\bproducts?\s+managers?\b/i,
 ];
 
 /**
@@ -120,6 +138,13 @@ export const EXCLUSION_PATTERNS = [
   /\bsecurity\b/i,
   /\bsupport\b/i,
   /\bproduct\s+owner\b/i,
+  // Genuinely junior PM titles — excluded explicitly now that a bare
+  // "Product Manager" / "Technical Product Manager" (see SENIOR_LEVEL_PATTERNS)
+  // can otherwise qualify with platform scope. These stay out regardless.
+  /\bassociate\s+product\b/i,
+  /\bassistant\s+product\b/i,
+  /\bjunior\b|\bjr\.?\s+product\b/i,
+  /\bproducts?\s+managers?\s+(i|ii|1|2)\b/i,
   // Caught by the first verification run against live boards:
   // Crusoe's "Senior Supervisor, Product Quality" is a manufacturing role,
   // and Modal's "Member of Technical Staff - Product (Backend)" is an
