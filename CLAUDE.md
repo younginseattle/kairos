@@ -409,6 +409,17 @@ of 20 (added in response to low ingestion volume) was fully resolved: 13 promote
 - Remote = location score 95–100; Seattle/WA hybrid = 80–90; requires relocation = 10–30
 - Startup "fast-paced" / "wear many hats" language → work_life_balance_score 50–69
 - On-call required → work_life_balance_score 30–49
+- `WEIGHTS` in `src/scoring.js`: comp (0.25) is weighted above level (0.15) as of
+  2026-09-23, at the repo owner's explicit direction — real pay is harder-to-fake evidence
+  of actual scope than a title word is. Domain (0.30, still heaviest), non-interchangeability
+  (0.20) and burden (0.10) are unchanged; comp and level simply swapped. Re-validated against
+  the full calibration suite before shipping — every pinned case, including CoreWeave (the
+  anchor for "high pay does NOT automatically buy back a title-CONFIRMED level miss"), still
+  lands in its historically-correct range. See the `highStatedComp()` note under Title bands
+  below for why that anchor is unaffected: reweighting only changes how much comp counts in
+  the blended mean once a role isn't hard-gated — it doesn't touch the gate itself, and a
+  title that actually confirms a rung-below-target level (like CoreWeave's "Staff PM") still
+  gets that gap priced by `LEVEL_MATRIX`, not overridden by pay.
 
 ### Title bands (`title_band` in `src/fitPrompt.js` / `LEVEL_MATRIX` in `src/scoring.js`)
 
@@ -422,15 +433,25 @@ with its own (asset/neutral/mismatch) row in `LEVEL_MATRIX`:
   clears the outside-target-level-band gate (45) — it is never auto-passed on title alone.
 - `below` — narrower than before: only a bare "Product Manager"/Associate PM with no
   seniority modifier at all. Still gated (ceiling 45, structural auto-pass) — **except**
-  at a company flagged `titleCompressesLevel` in `companyFacts.js` (Meta, NVIDIA as of
-  2026-09-21), where `scoring.js` reads `below` as `senior_pm`-equivalent instead: no
-  gate, no auto-pass, priced off the JD's actual signals. Added at the repo owner's
-  explicit direction after NVIDIA "Technical Product Manager - AI Infra Resilience" and
-  Meta "Product Manager, Agent Transformation Accelerator" were invisible in the pipeline
-  — both companies' external titles are known to undersell actual scope/comp, so title
-  text alone isn't a reliable "junior" signal there the way it is everywhere else. Narrow
-  and company-specific by design — see the field doc in `companyFacts.js` before adding
-  a company to the flag.
+  in two cases, both read by `highStatedComp()` / the `titleCompressed` check in
+  `scoreLevel()` and `computeGates()` in `src/scoring.js`:
+  1. A company flagged `titleCompressesLevel` in `companyFacts.js` (Meta, NVIDIA as of
+     2026-09-21) — both companies' external titles are known to undersell actual
+     scope/comp, so title text alone isn't a reliable "junior" signal there.
+  2. **Any** company, when the role's stated comp reads as genuinely high (comp
+     dimension score ≥ 85 on a real STATED figure, not a company-tier estimate).
+     Generalized 2026-09-23, at the repo owner's explicit direction, after noticing
+     Product Manager roles paying $400K in the pipeline scoring low on level alone —
+     a silent title gives no information, so a real high number is the stronger signal.
+     Requires `compResult` be computed before `scoreLevel()` in `computeFit()` (order
+     matters: comp needs to exist before level can read it).
+
+  In either case `below` reads as `senior_pm`-equivalent instead: no gate, no auto-pass,
+  priced off the JD's actual signals. This does **not** apply to a title that actually
+  *confirms* a rung-below-target level (e.g. CoreWeave's "Staff PM", which is its own
+  band, not `below`) — a silent title has nothing to override; a title-confirmed one
+  does, and high pay does not buy that back (the whole point of the CoreWeave anchor:
+  finals reached, lost on stated experience-level mismatch, at $320K+$100K).
 
 Before 2026-08-11, `target` absorbed Staff PM and `below` absorbed Senior PM. Existing rows
 extracted under the old vocabulary are ambiguous, not necessarily wrong — `src/staleSignals.js`

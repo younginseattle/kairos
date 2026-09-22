@@ -9,7 +9,7 @@
  * Run:  node src/scoring.test.mjs
  */
 
-import { computeFit, scoreBand, MODEL_VERSION, shouldAutoPass, MIN_AUTOPASS_CONFIDENCE, scoreExperienceGate, CANDIDATE_YEARS } from "./scoring.js";
+import { computeFit, scoreBand, MODEL_VERSION, shouldAutoPass, MIN_AUTOPASS_CONFIDENCE, scoreExperienceGate, CANDIDATE_YEARS, WEIGHTS } from "./scoring.js";
 import { getCompanyFacts, COMPANY_COUNT } from "./companyFacts.js";
 
 let passed = 0, failed = 0;
@@ -713,14 +713,55 @@ check("Meta: no outside-target-level-band gate fires",
   !metaBelow.gates.some(g => g.reason === "outside target level band"),
   JSON.stringify(metaBelow.gates));
 
-// Same signals at a company WITHOUT the flag must behave exactly as before —
-// this is a narrow, company-specific exception, not a change to "below".
-const datadogBelow = computeFit({ ...belowRoleBase, company: "Datadog", statedTc: 400 });
-check("a non-flagged company's bare-title role is still gated and auto-passed (unchanged)",
+// Same signals at a company WITHOUT the flag AND without a high stated comp
+// must behave exactly as before — this is a narrow exception, not a change
+// to "below" in general.
+const datadogBelow = computeFit({ ...belowRoleBase, company: "Datadog" });
+check("a non-flagged, non-high-comp bare-title role is still gated and auto-passed (unchanged)",
   datadogBelow.gates.some(g => g.reason === "outside target level band") && shouldAutoPass(datadogBelow).pass,
   `gates ${JSON.stringify(datadogBelow.gates)}, autoPass ${JSON.stringify(shouldAutoPass(datadogBelow))}`);
-check("a non-flagged company's level note does NOT mention title compression",
-  !datadogBelow.explanations.level.includes("undersell level"), datadogBelow.explanations.level);
+check("a non-flagged, non-high-comp level note does NOT mention title compression",
+  !datadogBelow.explanations.level.includes("senior-PM-equivalent"), datadogBelow.explanations.level);
+
+// ── Generalized 2026-09-23: a bare title with genuinely high stated comp ──
+// at ANY company, not just Meta/NVIDIA. This is the direct fix for "Product
+// Manager roles that pay $400K... scored low due to level" — the gate was
+// capping these at 45 (and auto-hiding them) regardless of how well
+// everything else read, because a silent title was treated as confirmed
+// entry-level.
+const datadogBelowHighComp = computeFit({ ...belowRoleBase, company: "Datadog", statedTc: 400 });
+check("a bare title with a genuinely high STATED comp is NOT gated, at any company",
+  !datadogBelowHighComp.gates.some(g => g.reason === "outside target level band"),
+  JSON.stringify(datadogBelowHighComp.gates));
+check("...and therefore NOT auto-passed (hidden) either",
+  !shouldAutoPass(datadogBelowHighComp).pass, JSON.stringify(shouldAutoPass(datadogBelowHighComp)));
+check("...the level note discloses the comp-based read specifically (not the company-flag wording)",
+  datadogBelowHighComp.explanations.level.includes("genuinely high stated comp"),
+  datadogBelowHighComp.explanations.level);
+
+// An ESTIMATED comp (nothing stated, inferred from companyFacts.tcBand) must
+// NOT trigger the override — only a real, literal figure counts as evidence.
+const estimatedCompDoesNotCount = computeFit({ ...belowRoleBase, company: "Google" });
+check("an estimated (not stated) comp does not unlock the high-comp exception",
+  estimatedCompDoesNotCount.gates.some(g => g.reason === "outside target level band"),
+  JSON.stringify(estimatedCompDoesNotCount.gates));
+
+// The CoreWeave calibration anchor must be unaffected: its title (Staff PM)
+// DOES confirm a real rung-below-target level, so the high-comp override
+// (which only applies to the silent "below" band) must never reach it.
+const coreweaveUnaffected = computeFit(CASES.coreweave.signals);
+check("CoreWeave (title-confirmed Staff PM, not 'below') is untouched by the high-comp exception",
+  coreweaveUnaffected.score === results.coreweave.score,
+  `${coreweaveUnaffected.score} vs pinned ${results.coreweave.score}`);
+
+// ── Comp weighted above level (2026-09-23, repo owner's explicit direction) ──
+check("comp is weighted above level in the blended mean",
+  WEIGHTS.comp > WEIGHTS.level, `comp ${WEIGHTS.comp} vs level ${WEIGHTS.level}`);
+check("a well-paid bare-title role reaches apply-if-or-better once the gate no longer blocks it",
+  datadogBelowHighComp.score >= 70, `scored ${datadogBelowHighComp.score}, band ${datadogBelowHighComp.band.label}`);
+check("CoreWeave — the anchor for 'high pay does not buy back a TITLE-CONFIRMED level miss' — stays in its pinned range even under the new weights",
+  coreweaveUnaffected.score >= 48 && coreweaveUnaffected.score <= 64,
+  `${coreweaveUnaffected.score} not in [48, 64]`);
 
 // The flag is narrow to "below" — it must not touch any other title band.
 const nvidiaTarget = computeFit({ ...belowRoleBase, company: "NVIDIA", titleBand: "target" });
