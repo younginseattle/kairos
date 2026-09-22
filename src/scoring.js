@@ -35,11 +35,23 @@ import { getCompanyFacts } from "./companyFacts.js";
 
 export const MODEL_VERSION = "fit-v2";
 
+// Comp weighted above level as of 2026-09-23, at the repo owner's explicit
+// direction: real pay is stronger, harder-to-fake evidence of actual scope
+// than a title word is. Swapped comp (0.15 -> 0.25) and level (0.25 -> 0.15)
+// directly, leaving domain/nonInter/burden untouched. Re-validated against
+// the full calibration suite before shipping — every pinned case, including
+// CoreWeave (the anchor for "high pay does NOT automatically buy back a
+// title-confirmed level miss" — see the two-stretch note above), still lands
+// in its historically-correct range. This complements, not replaces, the
+// highStatedComp() gate exception below: that fix is what actually unblocks
+// a well-paid "below"-band role past the outside-target-level-band ceiling;
+// this reweight is what then lets comp pull its own additional weight in the
+// blended score once a role isn't hard-gated.
 export const WEIGHTS = {
   domain:   0.30,  // domain proximity          — heaviest
-  level:    0.25,  // level fit                 — second heaviest
+  comp:     0.25,  // compensation realism      — second heaviest
   nonInter: 0.20,  // non-interchangeability    — the differentiator
-  comp:     0.15,  // compensation realism
+  level:    0.15,  // level fit
   burden:   0.10,  // process & life burden
 };
 
@@ -126,14 +138,35 @@ const LEVEL_MATRIX = {
   non_pm: { asset: 15, neutral: 12, mismatch: 10 },
 };
 
-export function scoreLevel({ titleBand, companyFacts, tier = null }) {
+/**
+ * A "below" band (bare "Product Manager", no seniority word at all) gives the
+ * level dimension NO information — the title is silent, not confirmed-junior
+ * the way "Staff PM" or "Senior PM" are. When the JD's OWN stated comp
+ * already reads as top-tier (a REAL stated figure, not a company-tier
+ * estimate), the pay itself is strong evidence the role isn't the
+ * entry-level IC rung a silent title would otherwise default to.
+ *
+ * This is deliberately distinct from the CoreWeave "Staff PM" calibration
+ * case: CoreWeave's title DID confirm one rung below target, and that
+ * confirmed signal correctly compounded with domain novelty to cost the
+ * real offer (lost on stated experience-level mismatch) despite $320K+$100K
+ * pay — high comp does not generally buy back a title-confirmed level gap.
+ * A bare title confirms nothing, so there's nothing for comp to override.
+ */
+function highStatedComp(compResult) {
+  return compResult?.score >= 85 && compResult?.tc != null && !compResult?.estimated;
+}
+
+export function scoreLevel({ titleBand, companyFacts, tier = null, compResult = null }) {
   // At a handful of companies external titles systematically undersell scope
   // (see companyFacts.js `titleCompressesLevel`) — a bare "Product Manager" at
   // Meta or NVIDIA is not the same signal it is everywhere else. Read as
   // senior_pm-equivalent there instead of the literal "below" band, so the
   // JD's actual signals (domain, stated comp) get to price the role instead
-  // of a title-text technicality burying it outright.
-  const titleCompressed = titleBand === "below" && companyFacts?.titleCompressesLevel;
+  // of a title-text technicality burying it outright. Generalized 2026-09-23,
+  // at the repo owner's explicit direction, to any "below"-band role with a
+  // genuinely high stated comp figure — see highStatedComp() above.
+  const titleCompressed = titleBand === "below" && (companyFacts?.titleCompressesLevel || highStatedComp(compResult));
   const effectiveBand = titleCompressed ? "senior_pm" : titleBand;
 
   const row = LEVEL_MATRIX[effectiveBand];
@@ -153,7 +186,11 @@ export function scoreLevel({ titleBand, companyFacts, tier = null }) {
   }
   const score = row[vp];
   const noteBits = [`${titleBand.replace(/_/g, " ")} title band`];
-  if (titleCompressed) noteBits.push("this company's titles undersell level — read as senior-PM-equivalent");
+  if (titleCompressed) {
+    noteBits.push(companyFacts?.titleCompressesLevel
+      ? "this company's titles undersell level — read as senior-PM-equivalent"
+      : "bare title with genuinely high stated comp — read as senior-PM-equivalent");
+  }
   if (companyFacts) noteBits.push(`VP background reads as ${vp} here`);
   else noteBits.push("company unknown — neutral read");
   if (effTier === "small") noteBits.push("small company: whole product function");
@@ -547,11 +584,14 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
   // entirely.
   //
   // Exception: "below" at a titleCompressesLevel company (companyFacts.js —
-  // Meta, NVIDIA as of 2026-09-21). scoreLevel() already reads that case as
+  // Meta, NVIDIA as of 2026-09-21), OR any "below" role with a genuinely high
+  // stated comp figure (generalized 2026-09-23 — see highStatedComp() above
+  // scoreLevel() for why this doesn't apply to a title-confirmed level miss
+  // like CoreWeave's "Staff PM"). scoreLevel() already reads either case as
   // senior_pm-equivalent for the level dimension; gating it here anyway would
   // undo that by auto-hiding the role on the same title-text technicality the
   // remap exists to route around.
-  const titleCompressed = titleBand === "below" && companyFacts?.titleCompressesLevel;
+  const titleCompressed = titleBand === "below" && (companyFacts?.titleCompressesLevel || highStatedComp(compResult));
   if (titleBand === "org_owner" || (titleBand === "below" && !titleCompressed) || titleBand === "non_pm") {
     gates.push({ reason: "outside target level band", ceiling: 45 });
   }
@@ -718,12 +758,15 @@ export function computeFit(signals) {
   const facts = getCompanyFacts(company);
 
   const d = scoreDomain(domain);
-  const l = scoreLevel({ titleBand, companyFacts: facts });
-  const n = scoreNonInterchangeability(nonInterchangeableMatches);
+  // Compensation is scored before level — scoreLevel() needs the comp result
+  // to decide whether a "below" band's silent title is overridden by a
+  // genuinely high stated figure (see highStatedComp() above scoreLevel()).
   const c = scoreCompensation({
     statedTc: compVerifiedTc ?? statedTc,
     statedBase, statedVariable, companyFacts: facts,
   });
+  const l = scoreLevel({ titleBand, companyFacts: facts, compResult: c });
+  const n = scoreNonInterchangeability(nonInterchangeableMatches);
   const b = scoreBurden({ locationPosture, onCall, travelHeavy, companyFacts: facts, burdenOverride });
 
   const compStated = (compVerifiedTc ?? statedTc) != null || statedBase != null;
