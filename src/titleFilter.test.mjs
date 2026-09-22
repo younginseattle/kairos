@@ -51,11 +51,24 @@ want("Sr Product Manager, Retail Checkout", false);
 // …unless the source is one where any senior PM role is worth surfacing.
 want("Senior Product Manager, Growth", true, { broad: true });
 
-console.log("\nBare and junior titles — out of scope");
+console.log("\nBare 'Product Manager' / 'Technical Product Manager' — in scope only with platform scope, same gate as Senior/Sr");
 want("Product Manager", false);
+want("Product Manager, Platform", true);
+want("Technical Product Manager - AI Infra Resilience", true);
+want("Product Manager, Agent Transformation Accelerator", true);
+want("Technical Product Manager, Growth", false);
+want("Product Manager, Growth", false);
+// …unless the source is one where any senior PM role is worth surfacing.
+want("Product Manager, Growth", true, { broad: true });
+
+console.log("\nJunior titles — still out of scope regardless of platform scope");
 want("Product Manager II", false);
+want("Product Manager I", false);
 want("Associate Product Manager", false);
-want("Product Manager, Platform", false);
+want("Associate Product Manager, Platform", false);
+want("Assistant Product Manager, Cloud", false);
+want("Junior Product Manager, Infrastructure", false);
+want("Jr. Product Manager, Platform", false);
 
 console.log("\nNon-PM roles that contain 'product' — out of scope");
 want("Director of Product Marketing", false);
@@ -105,7 +118,7 @@ for (const [line, expected] of [
   ["Datadog", false],
   ["Seattle, WA (Remote)", false],
   ["Actively recruiting", false],
-  ["Product Manager", false],
+  ["Product Manager", true],   // now a candidate line too — isRelevantTitle() still gates it on scope
 ]) {
   const got = looksLikeSeniorTitle(line);
   if (got === expected) { passed++; console.log(`  ✓ ${got ? "TITLE" : "not  "}  ${line}`); }

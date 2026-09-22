@@ -127,7 +127,16 @@ const LEVEL_MATRIX = {
 };
 
 export function scoreLevel({ titleBand, companyFacts, tier = null }) {
-  const row = LEVEL_MATRIX[titleBand];
+  // At a handful of companies external titles systematically undersell scope
+  // (see companyFacts.js `titleCompressesLevel`) — a bare "Product Manager" at
+  // Meta or NVIDIA is not the same signal it is everywhere else. Read as
+  // senior_pm-equivalent there instead of the literal "below" band, so the
+  // JD's actual signals (domain, stated comp) get to price the role instead
+  // of a title-text technicality burying it outright.
+  const titleCompressed = titleBand === "below" && companyFacts?.titleCompressesLevel;
+  const effectiveBand = titleCompressed ? "senior_pm" : titleBand;
+
+  const row = LEVEL_MATRIX[effectiveBand];
   if (!row) return { score: null, note: `unknown title band "${titleBand}"` };
 
   // Unknown company -> neutral column. This is NOT imputing a middle value for
@@ -139,11 +148,12 @@ export function scoreLevel({ titleBand, companyFacts, tier = null }) {
   // A small company hiring at target/staff band still means being the whole
   // product function. That is the scope Matt is deliberately stepping back
   // from, regardless of what the title says.
-  if (effTier === "small" && (titleBand === "target" || titleBand === "director" || titleBand === "staff")) {
+  if (effTier === "small" && (effectiveBand === "target" || effectiveBand === "director" || effectiveBand === "staff")) {
     vp = "mismatch";
   }
   const score = row[vp];
   const noteBits = [`${titleBand.replace(/_/g, " ")} title band`];
+  if (titleCompressed) noteBits.push("this company's titles undersell level — read as senior-PM-equivalent");
   if (companyFacts) noteBits.push(`VP background reads as ${vp} here`);
   else noteBits.push("company unknown — neutral read");
   if (effTier === "small") noteBits.push("small company: whole product function");
@@ -523,7 +533,14 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
   // by their own (larger) LEVEL_MATRIX discount instead. Only org_owner,
   // below (junior IC, no seniority modifier) and non_pm are outside the band
   // entirely.
-  if (titleBand === "org_owner" || titleBand === "below" || titleBand === "non_pm") {
+  //
+  // Exception: "below" at a titleCompressesLevel company (companyFacts.js —
+  // Meta, NVIDIA as of 2026-09-21). scoreLevel() already reads that case as
+  // senior_pm-equivalent for the level dimension; gating it here anyway would
+  // undo that by auto-hiding the role on the same title-text technicality the
+  // remap exists to route around.
+  const titleCompressed = titleBand === "below" && companyFacts?.titleCompressesLevel;
+  if (titleBand === "org_owner" || (titleBand === "below" && !titleCompressed) || titleBand === "non_pm") {
     gates.push({ reason: "outside target level band", ceiling: 45 });
   }
   if (!compStated) {

@@ -31,6 +31,26 @@
  *                   Where this company typically lands for the target level
  *                   band, used ONLY when comp is not stated in the posting.
  *                   Never used to override a stated number.
+ *   titleCompressesLevel   boolean, optional (default false)
+ *                   This company's external job titles systematically
+ *                   undersell actual scope/comp — a bare "Product Manager"
+ *                   here is not the same signal it is everywhere else.
+ *                   Read literally, title_band "below" (see fitPrompt.js)
+ *                   would bury a real senior-scoped role behind the
+ *                   outside-target-level-band structural auto-pass. When
+ *                   this flag is set, scoring.js reads a "below" band at
+ *                   this company as senior_pm-equivalent instead — priced
+ *                   off the JD's actual signals (domain, stated comp), not
+ *                   auto-hidden on a title-text technicality. Added
+ *                   2026-09-21 for Meta and NVIDIA at the repo owner's
+ *                   explicit direction, after two roles (NVIDIA "Technical
+ *                   Product Manager - AI Infra Resilience", Meta "Product
+ *                   Manager, Agent Transformation Accelerator") were
+ *                   invisible in the pipeline for exactly this reason.
+ *                   Narrow and company-specific — set it only where there's
+ *                   a concrete reason to believe title text is unreliable
+ *                   at that company, not as a general "trust me" escape
+ *                   hatch.
  *
  * Unknown companies return null and the caller drops confidence rather than
  * guessing. Adding a row is cheap; guessing is not.
@@ -94,7 +114,7 @@ const FACTS = {
   "posthog":     { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "mid" },
   "vercel":      { tier: "growth",      ownership: "private", equity: "semi",     vpBackground: "neutral",  remote: "remote_first", tcBand: "strong" },
   "netapp":      { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "mid" },
-  "nvidia":      { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "mismatch", remote: "hybrid",       tcBand: "top" },
+  "nvidia":      { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "mismatch", remote: "hybrid",       tcBand: "top", titleCompressesLevel: true },
   "oracle":      { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "mid" },
   "ibm":         { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "mid" },
   "salesforce":  { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" },
@@ -102,7 +122,7 @@ const FACTS = {
   // Estimates from public information (market cap, comp reporting, RTO policy),
   // not verified like the calibration-set rows above — correct if wrong.
   "servicenow":  { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "asset",    remote: "hybrid",       tcBand: "strong" },
-  "meta":        { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "neutral",  remote: "office",       tcBand: "top" },
+  "meta":        { tier: "established", ownership: "public",  equity: "liquid",   vpBackground: "neutral",  remote: "office",       tcBand: "top", titleCompressesLevel: true },
   // Amazon Development Center is an Amazon legal-entity name that shows up as
   // the `company` field on some Amazon postings — same company, same facts.
 

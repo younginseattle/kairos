@@ -633,6 +633,54 @@ const corpStrategyGap = computeFit({ ...CASES.bmc.signals,
 check("corp_strategy_mna is a recognised gap key and deducts",
   corpStrategyGap.math.gap_penalty > 0, `penalty ${corpStrategyGap.math.gap_penalty}`);
 
+// ── titleCompressesLevel — Meta/NVIDIA bare "Product Manager" ─────
+// Both companies' external titles undersell scope: NVIDIA "Technical Product
+// Manager - AI Infra Resilience" and Meta "Product Manager, Agent
+// Transformation Accelerator" were invisible in the pipeline — extracted as
+// title_band "below", which structurally auto-passes (hides) regardless of
+// how strong the rest of the signal reads. companyFacts.js flags both;
+// scoring.js reads "below" at a flagged company as senior_pm-equivalent
+// instead of gating it, added 2026-09-21 at the repo owner's direction.
+console.log("\n" + "=".repeat(76));
+console.log("TITLE-COMPRESSES-LEVEL — Meta / NVIDIA bare 'Product Manager'");
+
+const belowRoleBase = {
+  domain: { primary: "non_interchangeable" },
+  titleBand: "below",
+  nonInterchangeableMatches: [{ proof: "telemetry_econ", strength: "direct" }],
+  locationPosture: "seattle", knownGaps: [], jdChars: 2500,
+};
+
+const nvidiaBelow = computeFit({ ...belowRoleBase, company: "NVIDIA" });
+check("NVIDIA: a bare-title role is NOT auto-passed (hidden)",
+  !shouldAutoPass(nvidiaBelow).pass, shouldAutoPass(nvidiaBelow).reason);
+check("NVIDIA: no outside-target-level-band gate fires",
+  !nvidiaBelow.gates.some(g => g.reason === "outside target level band"),
+  JSON.stringify(nvidiaBelow.gates));
+check("NVIDIA: level note discloses the title-compression read",
+  nvidiaBelow.explanations.level.includes("undersell level"), nvidiaBelow.explanations.level);
+
+const metaBelow = computeFit({ ...belowRoleBase, company: "Meta", statedBase: 207 });
+check("Meta: a bare-title role is NOT auto-passed (hidden)",
+  !shouldAutoPass(metaBelow).pass, shouldAutoPass(metaBelow).reason);
+check("Meta: no outside-target-level-band gate fires",
+  !metaBelow.gates.some(g => g.reason === "outside target level band"),
+  JSON.stringify(metaBelow.gates));
+
+// Same signals at a company WITHOUT the flag must behave exactly as before —
+// this is a narrow, company-specific exception, not a change to "below".
+const datadogBelow = computeFit({ ...belowRoleBase, company: "Datadog", statedTc: 400 });
+check("a non-flagged company's bare-title role is still gated and auto-passed (unchanged)",
+  datadogBelow.gates.some(g => g.reason === "outside target level band") && shouldAutoPass(datadogBelow).pass,
+  `gates ${JSON.stringify(datadogBelow.gates)}, autoPass ${JSON.stringify(shouldAutoPass(datadogBelow))}`);
+check("a non-flagged company's level note does NOT mention title compression",
+  !datadogBelow.explanations.level.includes("undersell level"), datadogBelow.explanations.level);
+
+// The flag is narrow to "below" — it must not touch any other title band.
+const nvidiaTarget = computeFit({ ...belowRoleBase, company: "NVIDIA", titleBand: "target" });
+check("the flag does not alter a non-'below' band's score (target unaffected)",
+  !nvidiaTarget.explanations.level.includes("undersell level"), nvidiaTarget.explanations.level);
+
 // Every score ships with its reasoning.
 for (const [k, r] of Object.entries(results)) {
   check(`${k} emits a per-dimension explanation for every scored dimension`,
