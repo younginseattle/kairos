@@ -443,9 +443,34 @@ unbounded.
 
 `office_relocation` is the **harshest gate in the model** — ceiling 25, stricter than the
 outside-target-level-band gate (45). Stated as non-negotiable in the candidate profile: he is
-not moving, so no amount of domain or comp strength should be able to buy back the score. Still
-fires `shouldAutoPass` regardless of the exact ceiling value — this only matters for a
-low-confidence row that stays visible instead of auto-hiding.
+not moving, so no amount of domain or comp strength should be able to buy back the score.
+
+As of 2026-09-22, relocation is also the **one gate that bypasses `MIN_AUTOPASS_CONFIDENCE`**
+in `shouldAutoPass` — every other structural reason (outside target level band, the pay floor
+below) requires the extraction to clear 60% confidence before it hides a row, since a thin JD
+can genuinely misread an interpretive signal like `title_band`. Relocation is read literally
+off the JD's stated location, and is non-negotiable regardless of how the rest of the posting
+reads, so a low-confidence relocation read still auto-hides — added at the repo owner's
+explicit direction. Before this change a low-confidence relocation row stayed visible instead
+of auto-hiding; that safety net no longer applies to relocation specifically.
+
+### Pay floor
+
+Added 2026-09-22 at the repo owner's explicit direction: a posting whose **entire stated pay
+range tops out below $250K** is a structural disqualifier, same tier as relocation and
+outside-target-level-band — `shouldAutoPass` hides it. Reads `stated_comp_max` in
+`src/fitPrompt.js` — a new, independent literal field (the single highest dollar figure named
+anywhere in the posting, in thousands), extracted the same literal way as
+`stated_experience_years`, separate from the existing `stated_tc`/`stated_base` midpoint
+fields used elsewhere in the comp model. Only fires when a figure is actually stated; an
+unstated comp is handled by the separate `!compStated` gate and is never treated as reading
+low. Unlike relocation, this gate DOES respect `MIN_AUTOPASS_CONFIDENCE` — a thin JD can
+genuinely garble a number, and a stated pay figure isn't read as literally-unambiguous as a
+location string. Rows scored before this field existed have `stated_comp_max` entirely absent
+(not `null`); `src/staleSignals.js` flags a row stale when its JD contains a dollar-formatted
+figure and the field is undefined, for `rescore-jobs.mjs --stale-signals` to pick up — this
+one needs a fresh Claude call, `recompute-scores.mjs` cannot backfill a field the stored
+extraction never captured.
 
 ---
 

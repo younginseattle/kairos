@@ -497,9 +497,21 @@ export function scoreExperienceGate({ statedYearsMin = null, statedYearsMax = nu
 // GATES — ceilings, not nudges
 // ─────────────────────────────────────────────────────────────────
 
-export function computeGates({ compResult, locationPosture, titleBand, companyFacts, compStated, experienceGate = null, excludesExecutionScope = false }) {
+export function computeGates({ compResult, locationPosture, titleBand, companyFacts, compStated, experienceGate = null, excludesExecutionScope = false, statedCompMax = null }) {
   const gates = [];
   if (experienceGate) gates.push(experienceGate);
+  // The single highest number the JD names for this role's pay, read literally
+  // (fitPrompt.js `stated_comp_max`) — independent of the computed/grossed-up
+  // `compResult.tc` used by the sub-$300K gate below. A posting whose entire
+  // stated range tops out under $250K is not a "maybe with a strong case"
+  // role; it is a structural disqualifier the same as relocation or an
+  // outside-target-level-band title, added 2026-09-22 at the repo owner's
+  // explicit direction. Only fires when a figure was actually stated — an
+  // unstated comp is handled separately by the `!compStated` gate below and
+  // must never be treated as if it read low.
+  if (statedCompMax != null && statedCompMax < 250) {
+    gates.push({ reason: "stated pay band tops out below $250K", ceiling: 40 });
+  }
   // Domain and level are both keyword/title driven and can both read >85 on a
   // pure-strategy role that happens to be ABOUT his technology areas rather than
   // asking him to build/operate them (the Salesforce Sr. Director, Technical
@@ -575,24 +587,49 @@ export function computeGates({ compResult, locationPosture, titleBand, companyFa
  *     are accepted, discounted bands, not structural disqualifiers.
  *   - relocation required — he is not moving. Stated in the profile as
  *     non-negotiable, and the harshest gate in the model (ceiling 25).
+ *   - stated pay band tops out below $250K — the JD's own stated range, read
+ *     literally, never reaches a number worth the process. Added 2026-09-22
+ *     at the repo owner's explicit direction. Unlike relocation this one DOES
+ *     respect MIN_AUTOPASS_CONFIDENCE below — a thin JD can genuinely garble a
+ *     comp figure, and a number this consequential should not hide a role on
+ *     a guess the way a literal-but-low-stakes field might.
  *
  * Everything else stays visible and is handled by ranking. The Saved tab already
  * sorts by score and dims sub-60 rows, which is the non-destructive version of
  * the same intent.
  *
- * Confidence gates the whole thing: hiding a job on the strength of an
- * extraction we do not trust is how a thin JD or a malformed response becomes a
- * permanently missing role.
+ * Confidence gates the whole thing, with one deliberate exception: relocation.
+ * Every other structural reason (outside target level band) requires
+ * MIN_AUTOPASS_CONFIDENCE first — hiding a job on the strength of an
+ * extraction we do not trust is how a thin JD or a malformed response becomes
+ * a permanently missing role, and title_band is an interpretive read (scope,
+ * seniority language) that a thin JD can genuinely get wrong. Relocation is
+ * different: it is read literally off the JD's stated location the same way
+ * stated_experience_years is (fitPrompt.js: "be literal"), and the candidate
+ * profile states it as absolutely non-negotiable — no amount of domain or
+ * comp strength buys it back regardless of how the JD reads otherwise. So as
+ * of 2026-09-22, at the repo owner's explicit direction, a relocation-required
+ * gate hides the role even on a low-confidence extraction: the asymmetry is
+ * intentional, not an oversight — a role he would reject outright shouldn't
+ * get a "benefit of the doubt" pass into the visible pipeline just because
+ * the JD was thin.
  */
 export const MIN_AUTOPASS_CONFIDENCE = 60;
 
 export const STRUCTURAL_PASS_REASONS = new Set([
   "outside target level band",
   "relocation required",
+  "stated pay band tops out below $250K",
 ]);
 
 export function shouldAutoPass(fit) {
   if (!fit) return { pass: false, reason: "no fit result" };
+
+  // Relocation bypasses the confidence gate below — see the doc comment
+  // above for why this is the one deliberate exception.
+  const relocationGate = (fit.gates || []).find(g => g.reason === "relocation required");
+  if (relocationGate) return { pass: true, reason: relocationGate.reason };
+
   if (fit.confidence < MIN_AUTOPASS_CONFIDENCE) {
     return { pass: false, reason: `confidence ${fit.confidence}% below ${MIN_AUTOPASS_CONFIDENCE}% — not confident enough to hide` };
   }
@@ -666,6 +703,7 @@ export function computeFit(signals) {
     titleBand = "target",
     nonInterchangeableMatches = [],
     statedTc = null, statedBase = null, statedVariable = null,
+    statedCompMax = null,  // literal: highest number named anywhere for this position's pay
     locationPosture = "remote",
     onCall = false, travelHeavy = false,
     knownGaps = [],
@@ -712,7 +750,7 @@ export function computeFit(signals) {
   const afterStretch = afterGaps * multiplier;
 
   const experienceGate = scoreExperienceGate({ statedYearsMin, statedYearsMax, candidateYears });
-  const gates = computeGates({ compResult: c, locationPosture, titleBand, companyFacts: facts, compStated, experienceGate, excludesExecutionScope });
+  const gates = computeGates({ compResult: c, locationPosture, titleBand, companyFacts: facts, compStated, experienceGate, excludesExecutionScope, statedCompMax: normalizeTcThousands(statedCompMax) });
   const ceiling = gates.length ? Math.min(...gates.map(g => g.ceiling)) : 100;
 
   // Gates cap, but must not FLATTEN. A hard `min(raw, ceiling)` collapsed every

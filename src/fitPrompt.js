@@ -57,6 +57,7 @@ Schema:
   "stated_tc": number | null,
   "stated_base": number | null,
   "stated_variable": number | null,
+  "stated_comp_max": number | null,
   "comp_note": "what the posting actually said about money, or 'not stated'",
   "stated_experience_years": { "min": number | null, "max": number | null },
   "excludes_execution_scope": boolean,
@@ -167,6 +168,13 @@ If nothing is stated, return null for all three. DO NOT estimate, infer from com
 reputation, or substitute a typical value. A null here is correct and expected; a guess
 corrupts the model.
 
+"stated_comp_max" is a separate, literal field: the single HIGHEST number named anywhere
+for this position's pay, in thousands — the top of whatever range was stated (base, TC, or
+a single figure counts as its own max). This is read independently of the midpoint logic
+above, the same way stated_experience_years is read independently of title_band: report the
+number on the page, do not compute or infer it. "$148.5K-$220K" → 220. A single stated
+figure with no range → that figure. No compensation stated at all → null.
+
 ── STATED EXPERIENCE YEARS ──
 Report ONLY an explicit numeric years-of-experience requirement literally stated in the
 posting's Requirements/Qualifications section — a separate signal from title_band, and
@@ -234,6 +242,7 @@ export function extractionToSignals(x, { company, jd }) {
     statedTc: x?.stated_tc ?? null,
     statedBase: x?.stated_base ?? null,
     statedVariable: x?.stated_variable ?? null,
+    statedCompMax: x?.stated_comp_max ?? null,
     statedYearsMin: x?.stated_experience_years?.min ?? null,
     statedYearsMax: x?.stated_experience_years?.max ?? null,
     locationPosture: x?.location_posture,

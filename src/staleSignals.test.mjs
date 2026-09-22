@@ -107,6 +107,21 @@ check("the same JD is NOT stale once the field was explicitly set (even to false
 check("a plain execution-owning JD does not trip this check",
   staleReason(current) === null);
 
+console.log("\nstated_comp_max — added for the $250K pay-floor structural gate");
+const dollarFigureJd = { ...current,
+  description: "Compensation for this role is $148,500-$220,000 depending on level and location." };
+check("a JD stating a dollar figure, extracted before the field existed, is stale",
+  /stated_comp_max/.test(staleReason(dollarFigureJd) || ""),
+  staleReason(dollarFigureJd) || "not stale");
+check("the same JD is NOT stale once the field was explicitly set (even to null)",
+  staleReason({ ...dollarFigureJd, fit_detail: { extraction: {
+    ...current.fit_detail.extraction, stated_comp_max: null } } }) === null);
+check("a JD with no dollar figure at all does not trip this check",
+  staleReason(current) === null);
+check("a '$220K' shorthand figure is also caught",
+  /stated_comp_max/.test(staleReason({ ...current,
+    description: "This role pays up to $220K based on experience." }) || ""));
+
 console.log("\nNo false positives on unrelated wording");
 check("a plain observability JD does not trip the new topics",
   staleReason(current) === null);
