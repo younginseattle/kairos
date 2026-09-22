@@ -39,6 +39,14 @@ export const NEW_PROOF_TOPICS = {
 export const EXECUTION_EXCLUSION_LANGUAGE =
   /\b(rather than|instead of|not)\b[^.]{0,100}\b(sprint backlog|feature prioriti[sz]ation|execution roadmap|short-term execution|feature execution|roadmap ownership|day-to-day execution)\b/i;
 
+/**
+ * A dollar figure formatted the way postings actually state pay ("$148,500",
+ * "$220K", "$400k") — the tell that stated_comp_max (the literal upper-bound
+ * field the $250K pay-floor gate reads) had something to extract, whether or
+ * not the row's stored extraction predates the field.
+ */
+export const STATED_COMP_LANGUAGE = /\$\s?\d{2,3}(,\d{3}|[kK]\b)/;
+
 /** Postures a multi-site posting could have been flattened into. */
 export const FLATTENABLE_POSTURES = new Set(["hybrid_remote", "office_relocation"]);
 
@@ -99,6 +107,15 @@ export function staleReason(job) {
   // recorded it either way.
   if (x.excludes_execution_scope === undefined && EXECUTION_EXCLUSION_LANGUAGE.test(jd)) {
     return "JD may explicitly exclude execution/roadmap ownership — extracted before excludes_execution_scope existed";
+  }
+
+  // stated_comp_max did not exist at extraction time — same undefined-vs-null
+  // tell as excludes_execution_scope above. A JD that reads like it names a
+  // dollar figure means the old extraction had no way to capture the
+  // literal upper bound the $250K pay-floor gate needs, so the row's comp
+  // gate may be silently missing.
+  if (x.stated_comp_max === undefined && STATED_COMP_LANGUAGE.test(jd)) {
+    return "JD appears to state a dollar figure — extracted before stated_comp_max existed";
   }
 
   return null;

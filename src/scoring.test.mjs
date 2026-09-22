@@ -272,6 +272,52 @@ check("relocation gate ceiling is stricter than the title-band-mismatch gate",
   cpoRole.gates.find(g => g.reason === "outside target level band").ceiling,
   `relocation ${relocationRole.gates.find(g => g.reason === "relocation required").ceiling} vs title-band ${cpoRole.gates.find(g => g.reason === "outside target level band").ceiling}`);
 
+// ── Relocation bypasses the confidence gate (deliberate asymmetry) ─────────
+// Every other structural reason requires MIN_AUTOPASS_CONFIDENCE first, since
+// hiding a job on an extraction we don't trust is how a thin JD becomes a
+// permanently missing role. Relocation is the one exception: read literally,
+// stated as non-negotiable, so a low-confidence read still hides the role.
+const relocationThinJd = computeFit({ ...strongRole, company: "Datadog", locationPosture: "office_relocation", jdChars: 100 });
+check("relocation on a thin JD (low confidence) is STILL auto-passed",
+  shouldAutoPass(relocationThinJd).pass, JSON.stringify(shouldAutoPass(relocationThinJd)));
+check("...confidence really is low, so this is testing the exception, not a fluke",
+  relocationThinJd.confidence < MIN_AUTOPASS_CONFIDENCE, `confidence ${relocationThinJd.confidence}%`);
+
+const belowThinJd = computeFit({ ...strongRole, company: "Datadog", titleBand: "below", jdChars: 100 });
+check("...but outside-target-level-band on the same thin JD is NOT — confidence gate still applies there",
+  !shouldAutoPass(belowThinJd).pass, JSON.stringify(shouldAutoPass(belowThinJd)));
+
+// ── Stated pay band tops out below $250K — a new structural disqualifier ──
+// Independent of the computed/grossed-up compResult.tc used by the existing
+// sub-$300K gate: this reads the JD's own stated range literally, the same
+// way stated_comp_max is extracted.
+const lowPayBand = computeFit({ ...strongRole, company: "Datadog", statedCompMax: 220 });
+check("a stated pay band topping out under $250K IS auto-passed",
+  shouldAutoPass(lowPayBand).pass, JSON.stringify(shouldAutoPass(lowPayBand)));
+check("...and the new gate is what does it",
+  lowPayBand.gates.some(g => g.reason === "stated pay band tops out below $250K"),
+  JSON.stringify(lowPayBand.gates));
+
+const atPayThreshold = computeFit({ ...strongRole, company: "Datadog", statedCompMax: 250 });
+check("exactly $250K does NOT trigger the gate (< 250 only)",
+  !atPayThreshold.gates.some(g => g.reason === "stated pay band tops out below $250K"),
+  JSON.stringify(atPayThreshold.gates));
+
+const noCompStatedAtAll = computeFit({ ...strongRole, company: "Datadog" });
+check("no stated comp at all does NOT trigger the new gate (that's the separate 'unverified' gate)",
+  !noCompStatedAtAll.gates.some(g => g.reason === "stated pay band tops out below $250K"),
+  JSON.stringify(noCompStatedAtAll.gates));
+
+const highPayBand = computeFit({ ...strongRole, company: "Datadog", statedCompMax: 400, statedTc: 400 });
+check("a healthy pay band is unaffected",
+  !highPayBand.gates.some(g => g.reason === "stated pay band tops out below $250K"));
+
+// Unlike relocation, the pay-floor gate DOES respect the confidence gate — a
+// thin JD can genuinely garble a comp figure.
+const lowPayThinJd = computeFit({ ...strongRole, company: "Datadog", statedCompMax: 220, jdChars: 100 });
+check("a low pay band on a thin JD (low confidence) is NOT auto-passed — confidence gate still applies",
+  !shouldAutoPass(lowPayThinJd).pass, JSON.stringify(shouldAutoPass(lowPayThinJd)));
+
 // A comp gate is a calibration artefact, not a structural fact — must not hide.
 const compGated = computeFit({ ...strongRole, company: "Nobody Curated Inc", statedBase: 120 });
 check("the sub-$300K comp gate does NOT trigger auto-pass",
