@@ -215,7 +215,17 @@ When the posting offers a CHOICE of sites, return ALL of them as an array — th
 candidate picks, so the role is scored on the option he would actually take.
 "Bellevue or San Francisco, 4 days per week" is ["hybrid_local", "hybrid_remote"],
 NOT hybrid_remote. Returning only the non-Seattle site turns a local job into a
-Bay Area job. A single site is still a plain string.`;
+Bay Area job. A single site is still a plain string.
+
+This applies just as much to the separately-provided LOCATION field as to prose in
+the JD body — ATS postings routinely list multiple offices there as a delimited
+string rather than a sentence: "San Francisco, CA | New York City, NY | Seattle, WA"
+or "San Francisco, CA; Seattle, WA" is a choice of sites exactly like the "or"
+phrasing above, and is ["hybrid_remote", "seattle"] — NOT hybrid_remote alone.
+Scan every city named in BOTH the LOCATION field and the JD body, on any delimiter
+(",", "|", ";", "or", "/"), before deciding this is a single-site posting. If
+Seattle/Bellevue/Redmond appears anywhere among them, it must appear in the
+result — never dropped in favor of a "primary" or first-listed office.`;
 
 /** Builds the user message for an extraction call. */
 export function buildFitUserMessage({ title, company, location, jd }) {
