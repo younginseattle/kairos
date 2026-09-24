@@ -29,7 +29,7 @@ if (typeof document !== "undefined" && !document.getElementById("jsa-fonts")) {
 const DARK_TOKENS = {
   bg: "#0e0f11", surface: "#141518", panel: "#1a1c21", panelHover: "#1f2228",
   border: "#2a2d35", borderFaint: "#1f2228",
-  textPrimary: "#e8eaf0", textSecondary: "#b0b8cc", textMuted: "#7a8090", textInverse: "#0e0f11",
+  textPrimary: "#e8eaf0", textSecondary: "#b0b8cc", textMuted: "#8b91a3", textInverse: "#0e0f11",
   green: "#2ecc71", greenBg: "#0d1f15", greenBorder: "#1a4a2e",
   amber: "#f39c12", amberBg: "#1f1500", amberBorder: "#4a3000",
   red: "#e74c3c", redBg: "#1f0d0b", redBorder: "#4a1a15",
@@ -43,7 +43,7 @@ const DARK_TOKENS = {
 const LIGHT_TOKENS = {
   bg: "#f8f9fb", surface: "#ffffff", panel: "#f0f2f5", panelHover: "#e8ebf0",
   border: "#d4d8e2", borderFaint: "#e4e7ee",
-  textPrimary: "#1a1d26", textSecondary: "#4a5165", textMuted: "#8a92a6", textInverse: "#ffffff",
+  textPrimary: "#1a1d26", textSecondary: "#4a5165", textMuted: "#5c6478", textInverse: "#ffffff",
   green: "#16a34a", greenBg: "#f0fdf4", greenBorder: "#bbf7d0",
   amber: "#b45309", amberBg: "#fffbeb", amberBorder: "#fde68a",
   red: "#dc2626", redBg: "#fef2f2", redBorder: "#fecaca",
@@ -866,6 +866,10 @@ const KNOWN_STATUS_KEYS = new Set(PIPELINE_STATUSES.map(s => s.key));
  *  rows counted toward Total but never appeared as their own slice, so the
  *  chart silently under-represented the pipeline. */
 const isOtherStatus = (status) => !KNOWN_STATUS_KEYS.has(status);
+/** Reviewing/Interviewing still count toward the totals and stay assignable
+ *  via StatusButtons, but are no longer usable as a Saved-tab filter target —
+ *  their widgets/segments render read-only instead of clickable. */
+const NON_FILTERABLE_STATUSES = new Set(["reviewing", "interviewing"]);
 
 // Distinct per-segment palette for the doughnut chart — adjacent ring slices
 // need their own hue to stay legible (unlike the tiles above, where each
@@ -971,18 +975,24 @@ function PipelineDashboard({ jobs, activeStatus, onFilterStatus, dark }) {
     ...(otherCount > 0 ? [{ key: "other", label: "Other", value: otherCount, color: T.amber, bg: T.amberBg }] : []),
   ];
 
+  // Reviewing/Interviewing no longer act as a filter — guard the handler so
+  // clicking their tile or doughnut segment is a no-op rather than filtering.
+  const handleFilter = key => { if (!NON_FILTERABLE_STATUSES.has(key)) onFilterStatus(key); };
+
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))", gap: 8, marginBottom: 10 }}>
         {widgets.map(({ key, label, value, color, bg }) => {
           const active = key === "all" ? activeStatus === "all" : activeStatus === key;
+          const filterable = !NON_FILTERABLE_STATUSES.has(key);
+          const Tag = filterable ? "button" : "div";
           return (
-            <button key={key} onClick={() => onFilterStatus(key)}
-              className="jsa-card-hover"
-              style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", padding: "10px 12px", borderRadius: 8, background: active ? bg : T.panel, border: `1px solid ${active ? color : T.borderFaint}`, transition: "background 0.15s, border-color 0.15s" }}>
+            <Tag key={key} onClick={filterable ? () => handleFilter(key) : undefined}
+              className={filterable ? "jsa-card-hover" : undefined}
+              style={{ textAlign: "left", cursor: filterable ? "pointer" : "default", fontFamily: "inherit", padding: "10px 12px", borderRadius: 8, background: active ? bg : T.panel, border: `1px solid ${active ? color : T.borderFaint}`, transition: "background 0.15s, border-color 0.15s" }}>
               <div style={{ fontFamily: T.fontMono, fontSize: 22, fontWeight: 700, color, lineHeight: 1.1 }}>{value}</div>
               <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted, letterSpacing: "0.07em", marginTop: 3 }}>{label.toUpperCase()}</div>
-            </button>
+            </Tag>
           );
         })}
       </div>
@@ -996,7 +1006,7 @@ function PipelineDashboard({ jobs, activeStatus, onFilterStatus, dark }) {
         return (
           <div style={{ padding: "14px 16px", background: T.panel, border: `1px solid ${T.borderFaint}`, borderRadius: 8 }}>
             <div style={{ fontFamily: T.fontMono, fontSize: 9, fontWeight: 600, letterSpacing: "0.1em", color: T.textMuted, marginBottom: 12 }}>PIPELINE DISTRIBUTION</div>
-            <DoughnutChart segments={segments} total={total} activeKey={activeStatus} onSelect={onFilterStatus} />
+            <DoughnutChart segments={segments} total={total} activeKey={activeStatus} onSelect={handleFilter} />
           </div>
         );
       })()}
@@ -2807,7 +2817,6 @@ async function doQuickScore(job) {
             <div style={{ width: 1, height: 16, background: T.border, margin: "0 2px" }} />
             {[
               { label: "All", status: "all" }, { label: "New", status: "new" },
-              { label: "Reviewing", status: "reviewing" },
             ].map(({ label, status }) => {
               const active = savedFilter.status === status;
               return <button key={status} onClick={() => setSavedFilter(f => ({ ...f, status }))} style={{ fontFamily: T.fontSans, fontSize: 12, fontWeight: active ? 500 : 400, padding: "3px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${active ? T.accentDim : T.border}`, background: active ? T.greenBg : "transparent", color: active ? T.green : T.textMuted, transition: "all 0.12s" }}>{label}</button>;
